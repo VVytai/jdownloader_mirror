@@ -55,7 +55,7 @@ import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.FaceBookComVideos;
 
 @SuppressWarnings("deprecation")
-@DecrypterPlugin(revision = "$Revision: 52312 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53203 $", interfaceVersion = 3, names = {}, urls = {})
 public class FaceBookComGallery extends PluginForDecrypt {
     public FaceBookComGallery(PluginWrapper wrapper) {
         super(wrapper);
@@ -355,6 +355,16 @@ public class FaceBookComGallery extends PluginForDecrypt {
             titleHTML = titleHTML.replaceAll("\\.\\.\\.$", "");
             titleHTML = titleHTML.trim();
         }
+        /*
+         * 2026-08-24: og:description contains the clean caption. For reels og:title is polluted with view-/reaction counts and the
+         * uploader name (e.g. "7,4 Mio. Aufrufe / 281.111 Reaktionen | <caption> | <uploader>"), so og:description is the better source
+         * for title/description there.
+         */
+        String descriptionHTML = HTMLSearch.searchMetaTag(br, "og:description");
+        if (descriptionHTML != null) {
+            descriptionHTML = Encoding.htmlDecode(descriptionHTML).trim();
+        }
+        final boolean isReelURL = new Regex(br.getURL(), "(?i)/reel/\\d+").patternFind() || new Regex(addedurl, "(?i)/reel/\\d+").patternFind();
         String slugOfVideoTitle = br.getRegex("/videos/([^/]+)/" + contentIDOfSingleDesiredVideo).getMatch(0);
         if (slugOfVideoTitle != null) {
             slugOfVideoTitle = Encoding.htmlDecode(slugOfVideoTitle).trim();
@@ -369,6 +379,7 @@ public class FaceBookComGallery extends PluginForDecrypt {
             String uploaderName = null;
             String uploaderNameFromURL = null;
             String publishDateFormatted = null;
+            String description = null;
             addExtraInfo1: if (titleHTML != null || videoExtraInfoMap != null) {
                 if (videoExtraInfoMap != null) {
                     final Map<String, Object> titlemap = (Map<String, Object>) videoExtraInfoMap.get("title");
@@ -416,8 +427,69 @@ public class FaceBookComGallery extends PluginForDecrypt {
                     }
                 }
             }
+            addExtraInfo4: {
+                /*
+                 * 2026-08-24: Fallback for reels when logged in. When logged OUT, facebook still delivers the reel owner/title via
+                 * og:title (see titleHTML) and a "video_owner" object (see addExtraInfo3), so the branches above already cover it. When
+                 * logged IN however those are missing (no og:title meta, no "video_owner" object - only "video_owner_type"). In that case
+                 * the data still lives inside the reel's "creation_story" node which carries "actors" (uploader), "message" (caption used
+                 * as title/description) and a "tracking" string containing the video-id.
+                 */
+                if (videoTitle != null && uploaderName != null && uploaderNameFromURL != null && description != null) {
+                    /* No need to look for this extra information. */
+                    break addExtraInfo4;
+                }
+                final Map<String, Object> reelStoryMap = this.findReelStoryMap(parsedJsons, contentIDOfSingleDesiredVideo);
+                if (reelStoryMap == null) {
+                    logger.warning("addExtraInfo4: no result");
+                    break addExtraInfo4;
+                }
+                final Map<String, Object> messagemap = (Map<String, Object>) reelStoryMap.get("message");
+                if (messagemap != null) {
+                    final String messageText = (String) messagemap.get("text");
+                    if (!StringUtils.isEmpty(messageText)) {
+                        if (videoTitle == null) {
+                            videoTitle = messageText;
+                        }
+                        if (description == null) {
+                            description = messageText;
+                        }
+                    }
+                }
+                final List<Map<String, Object>> actors = (List<Map<String, Object>>) reelStoryMap.get("actors");
+                if (actors != null && !actors.isEmpty()) {
+                    final Map<String, Object> actor = actors.get(0);
+                    if (uploaderName == null) {
+                        uploaderName = (String) actor.get("name");
+                    }
+                    if (uploaderNameFromURL == null) {
+                        final String url = (String) actor.get("url");
+                        if (url != null) {
+                            uploaderNameFromURL = new Regex(url, "https?://[^/]+/([^/]+)$").getMatch(0);
+                        }
+                    }
+                }
+            }
+            addExtraInfo5: {
+                /*
+                 * 2026-08-24: For reels prefer the clean og:description caption over the polluted og:title as title/description. Relevant
+                 * for logged-out sessions where the "message" text used by addExtraInfo4 is not available.
+                 */
+                if (!isReelURL || StringUtils.isEmpty(descriptionHTML)) {
+                    break addExtraInfo5;
+                }
+                if (videoTitle == null) {
+                    videoTitle = descriptionHTML;
+                }
+                if (description == null) {
+                    description = descriptionHTML;
+                }
+            }
             if (uploaderName != null) {
                 uploaderName = uploaderName.trim();
+            }
+            if (description != null) {
+                description = description.trim();
             }
             if (videoTitle != null) {
                 videoTitle = videoTitle.trim();
@@ -442,6 +514,10 @@ public class FaceBookComGallery extends PluginForDecrypt {
                 }
                 if (publishDateFormatted != null) {
                     result.setProperty(FaceBookComVideos.PROPERTY_DATE_FORMATTED, publishDateFormatted);
+                }
+                final String preFetchedDescription = result.getStringProperty(FaceBookComVideos.PROPERTY_DESCRIPTION);
+                if (StringUtils.isEmpty(preFetchedDescription) && !StringUtils.isEmpty(description)) {
+                    result.setProperty(FaceBookComVideos.PROPERTY_DESCRIPTION, description);
                 }
             }
             if (videoPackages.size() == 1 && titleHTML != null) {
@@ -855,6 +931,60 @@ public class FaceBookComGallery extends PluginForDecrypt {
             for (final Object arrayo : array) {
                 if (arrayo instanceof List || arrayo instanceof Map) {
                     final Object res = findVideoExtraInfoMapRecursive3(arrayo, videoid);
+                    if (res != null) {
+                        return res;
+                    }
+                }
+            }
+            return null;
+        } else {
+            return null;
+        }
+    }
+
+    /* 2026-08-24 */
+    private Map<String, Object> findReelStoryMap(final List<Object> parsedJsons, final String videoid) {
+        for (final Object parsedJsonO : parsedJsons) {
+            final Object mapO = findReelStoryMapRecursive(parsedJsonO, videoid);
+            if (mapO != null) {
+                return (Map<String, Object>) mapO;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Tries to find the "creation_story" node of a reel. </br>
+     * That node carries the "actors" (uploader), "message" (caption used as title/description) and a "tracking" string which contains the
+     * video-id. </br>
+     * Used as a fallback for logged-in sessions where og:title and the "video_owner" object are missing.
+     */
+    private Object findReelStoryMapRecursive(final Object o, final String videoid) {
+        if (videoid == null) {
+            return null;
+        }
+        if (o instanceof Map) {
+            final Map<String, Object> entrymap = (Map<String, Object>) o;
+            final Object tracking = entrymap.get("tracking");
+            if (tracking instanceof String && ((String) tracking).contains(videoid) && entrymap.get("actors") instanceof List && entrymap.get("message") instanceof Map) {
+                return entrymap;
+            }
+            for (final Map.Entry<String, Object> entry : entrymap.entrySet()) {
+                // final String key = entry.getKey();
+                final Object value = entry.getValue();
+                if (value instanceof List || value instanceof Map) {
+                    final Object ret = findReelStoryMapRecursive(value, videoid);
+                    if (ret != null) {
+                        return ret;
+                    }
+                }
+            }
+            return null;
+        } else if (o instanceof List) {
+            final List<Object> array = (List) o;
+            for (final Object arrayo : array) {
+                if (arrayo instanceof List || arrayo instanceof Map) {
+                    final Object res = findReelStoryMapRecursive(arrayo, videoid);
                     if (res != null) {
                         return res;
                     }

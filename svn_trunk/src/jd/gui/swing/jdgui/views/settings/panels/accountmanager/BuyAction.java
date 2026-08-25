@@ -89,17 +89,24 @@ public class BuyAction extends AbstractAction {
                     }
                 }
                 final LazyHostPlugin[] options = plugins.toArray(new LazyHostPlugin[plugins.size()]);
-                LazyHostPlugin plg = HostPluginController.getInstance().get(getPreselectedHoster());
-                if (plg == null) {
-                    if (selection != null && selection.size() > 0) {
+                LazyHostPlugin plg = null;
+                /* If an entry is selected in the table, preselect its hoster. */
+                if (selection != null && selection.size() > 0) {
+                    final String selectedHoster = selection.get(0).getAccount().getHoster();
+                    plg = HostPluginController.getInstance().get(selectedHoster);
+                    if (plg == null) {
                         for (Iterator<?> iterator = plugins.iterator(); iterator.hasNext();) {
                             LazyHostPlugin hostPluginWrapper = (LazyHostPlugin) iterator.next();
-                            if (hostPluginWrapper.getDisplayName().equals(selection.get(0).getAccount().getHoster())) {
+                            if (hostPluginWrapper.getDisplayName().equals(selectedHoster)) {
                                 plg = hostPluginWrapper;
                                 break;
                             }
                         }
                     }
+                }
+                /* No selection (or selected hoster not found) -> fall back to the default preselection. */
+                if (plg == null) {
+                    plg = HostPluginController.getInstance().get(getPreselectedHoster());
                 }
                 final LazyHostPlugin defaultSelection = plg;
                 new EDTRunner() {

@@ -96,6 +96,24 @@ public class RefreshAction extends AbstractAction {
 
     @Override
     public boolean isEnabled() {
-        return selection == null || selection.size() > 0;
+        if (selection == null) {
+            /* Toolbar / "refresh all" action: enabled only if at least one enabled account exists. */
+            for (final Account acc : AccountController.getInstance().list()) {
+                if (acc.isEnabled()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return selection.size() > 0;
+    }
+
+    /**
+     * Re-evaluates {@link #isEnabled()} and notifies listeners (e.g. the toolbar button) so they can update their
+     * enabled state. Since {@link #isEnabled()} is computed dynamically, callers must invoke this whenever the
+     * underlying account state may have changed.
+     */
+    public void updateEnabledState() {
+        firePropertyChange("enabled", null, Boolean.valueOf(isEnabled()));
     }
 }

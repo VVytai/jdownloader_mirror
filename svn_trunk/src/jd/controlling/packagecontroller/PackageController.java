@@ -655,7 +655,8 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
             throw new IllegalArgumentException();
         }
         if (mergesettings.getMergeSameNamedPackages()) {
-            if (srcPkgs != null && srcPkgs.isEmpty()) {
+            if (dest == null && srcLinks == null && srcPkgs != null && srcPkgs.isEmpty()) {
+                /* Selection is empty -> User has triggered "Merge same named packages" action without selection -> Nothing for us to-do. */
                 return;
             }
         } else {
@@ -669,11 +670,11 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
             @Override
             protected Void run() throws RuntimeException {
                 int positionMerge = mergesettings.getPackagePosition();
-                /* Prepare destination-package */
                 if (dest != null) {
+                    /* Prepare destination-package */
                     dest.setExpanded(mergesettings.getExpandPackage());
                     if (srcPkgs != null && mergesettings.getMergePackageComments()) {
-                        /* Merge package comments */
+                        /* There are multiple source packages and comments shall be merged */
                         final List<PackageType> allPackages = new ArrayList<PackageType>();
                         allPackages.add(dest);
                         allPackages.addAll(srcPkgs);
@@ -693,8 +694,8 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
                     }
                 }
                 if (srcPkgs != null) {
+                    /* move links from srcPkgs to dest */
                     for (final PackageType pkg : srcPkgs) {
-                        /* move links from srcPkgs to dest */
                         final int size = pkg.getChildren().size();
                         moveOrAddAt(dest, pkg.getChildren(), 0, positionMerge);
                         if (positionMerge != -1) {
@@ -704,72 +705,96 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
                     }
                 }
                 if (mergesettings.getMergeSameNamedPackages()) {
-                    /*
-                     * Same-name merging re-enters merge(...) below, which schedules another QueueAction on the same QUEUE. Adding to the
-                     * QUEUE from within a running QueueAction is intentional here: the nested actions are appended and processed in order
-                     * by the same queue thread, so this does not deadlock. The recursive calls receive a copy of the settings with
-                     * mergeSameNamedPackages disabled to prevent an endless loop.
-                     */
-                    final Map<String, List<PackageType>> dupes;
-                    if (dest != null) {
-                        final List<PackageType> mergePackages = new ArrayList<PackageType>();
-                        mergePackages.add(dest);
-                        dupes = getPackagesWithSameName(mergePackages, mergesettings);
-                    } else {
-                        dupes = getPackagesWithSameName(srcPkgs, mergesettings);
-                    }
-                    if (dupes.isEmpty()) {
-                        /* Zero results -> Do nothing */
-                        return null;
-                    }
-                    /*
-                     * Copy the settings and disable same-name merging for the recursive calls. This avoids an endless loop without mutating
-                     * the caller's settings object.
-                     */
-                    final PackageSettings recursionSettings = new PackageSettings(mergesettings).setMergeSameNamedPackages(false);
-                    final Iterator<Entry<String, List<PackageType>>> dupes_iterator = dupes.entrySet().iterator();
-                    while (dupes_iterator.hasNext()) {
-                        final Entry<String, List<PackageType>> entry = dupes_iterator.next();
-                        final List<PackageType> thisdupes = entry.getValue();
-                        if (thisdupes.size() == 1) {
-                            /* We need at least two packages to be able to merge them. */
-                            continue;
-                        }
-                        /* Merge all duplicates into first package */
-                        if (dest != null) {
-                            /**
-                             * Dest is given -> Merge into first existing duplicated package ONLY (top to bottom). </br>
-                             * Example: User selects packages "package1" + "package2" -> Merge -> Name is "test" -> User wants us to merge
-                             * that one into existing duplicates -> Now if there were to exist more packages also called "test" we do not
-                             * merge all into one but only the new "test" into the first old "test".
-                             */
-                            PackageType firstForeignDupe = null;
-                            for (final PackageType dupe : thisdupes) {
-                                if (dupe != dest) {
-                                    firstForeignDupe = dupe;
-                                    break;
-                                }
-                            }
-                            if (firstForeignDupe == null) {
-                                /* All duplicates are the destination itself -> nothing foreign to merge into. */
-                                continue;
-                            }
-                            thisdupes.clear();
-                            thisdupes.add(firstForeignDupe);
-                            merge(dest, null, thisdupes, recursionSettings);
-                            /* We are done (though dupes_iterator sizer should be 1 either way). */
-                            break;
-                        } else {
-                            /* No dest is given -> Merge either all duplicates in whole list or duplicates within selection */
-                            final PackageType target = thisdupes.remove(0);
-                            merge(target, null, thisdupes, recursionSettings);
-                        }
-                    }
-                    /* End */
+                    mergeSameNamedPackagesPass(dest, srcPkgs, mergesettings);
                 }
                 return null;
             }
         });
+    }
+
+    /**
+     * Same-name merging step of {@link #merge} (only invoked when {@link PackageSettings#getMergeSameNamedPackages()} is set). Consolidates
+     * packages that share the same name and download path (grouping is done by {@link #getPackagesWithSameName}). By the time this runs,
+     * merge() has already moved srcLinks/srcPkgs into dest, so dest already carries the merged content and is part of the controller. </br>
+     * Runs on the QUEUE thread (called from within merge's QueueAction). It re-enters merge(...) for the actual moving; since QUEUE.add
+     * from the queue thread runs synchronously, this does not deadlock. The recursive calls receive a copy of the settings with
+     * mergeSameNamedPackages disabled to prevent an endless loop.
+     *
+     * @param dest
+     *            the merge destination, or null - this selects the mode: </br>
+     *            <b>dest != null</b> ("fold into destination"): groups by dest's own name and folds the FIRST existing same named package
+     *            into dest, then stops - even if further same named packages exist, only that one is merged. Used by {@link #merge} when a
+     *            selection was merged into a (possibly freshly created) target package that should join an already existing package of the
+     *            same name. Note: dest itself is part of its group, so a group of size 1 means dest has no same named partner. srcPkgs is
+     *            NOT consulted in this mode. </br>
+     *            <b>dest == null</b> ("consolidate"): groups the same named packages and merges each group into its first (topmost) member.
+     *            The scope is given by srcPkgs.
+     * @param srcPkgs
+     *            only used when dest == null: the selection whose duplicates should be consolidated, or null to consolidate duplicates
+     *            across the whole controller.
+     * @param mergesettings
+     *            merge settings; for this step only its case-insensitivity flag affects the name matching (mergeSameNamedPackages is
+     *            disabled on the copy used for the recursive move calls).
+     */
+    protected void mergeSameNamedPackagesPass(final PackageType dest, final List<PackageType> srcPkgs, final PackageSettings mergesettings) {
+        /* Build the groups of same named (and same download path) packages to consider. */
+        final Map<String, List<PackageType>> dupes;
+        if (dest != null) {
+            /* Match against dest's own name; dest is already controlled, so its group also contains dest itself. */
+            final List<PackageType> mergePackages = new ArrayList<PackageType>();
+            mergePackages.add(dest);
+            dupes = getPackagesWithSameName(mergePackages, mergesettings);
+        } else {
+            /* Consolidate within the given selection, or across the whole controller when srcPkgs is null. */
+            dupes = getPackagesWithSameName(srcPkgs, mergesettings);
+        }
+        if (dupes.isEmpty()) {
+            /* Zero results -> Do nothing */
+            return;
+        }
+        /*
+         * Copy the settings and disable same-name merging for the recursive calls. This avoids an endless loop without mutating the
+         * caller's settings object.
+         */
+        final PackageSettings recursionSettings = new PackageSettings(mergesettings).setMergeSameNamedPackages(false);
+        final Iterator<Entry<String, List<PackageType>>> dupes_iterator = dupes.entrySet().iterator();
+        while (dupes_iterator.hasNext()) {
+            final Entry<String, List<PackageType>> entry = dupes_iterator.next();
+            final List<PackageType> thisdupes = entry.getValue();
+            if (thisdupes.size() == 1) {
+                /* Only one package in this group -> no same named partner to merge with (in dest mode this is dest alone). */
+                continue;
+            }
+            if (dest != null) {
+                /**
+                 * Dest is given -> fold the FIRST existing same named package into dest ONLY (top to bottom). </br>
+                 * Example: User selects packages "package1" + "package2" -> Merge -> Name is "test" -> User wants us to merge that one into
+                 * existing duplicates -> Now if there were to exist more packages also called "test" we do not merge all into one but only
+                 * the new "test" into the first old "test".
+                 */
+                /* Skip dest itself (it is part of its own group) and pick the first other same named package. */
+                PackageType firstForeignDupe = null;
+                for (final PackageType dupe : thisdupes) {
+                    if (dupe != dest) {
+                        firstForeignDupe = dupe;
+                        break;
+                    }
+                }
+                if (firstForeignDupe == null) {
+                    /* Defensive: group has size >= 2 here, so this only triggers if every member is dest -> nothing foreign to fold in. */
+                    continue;
+                }
+                /* Fold that one existing package into dest ... */
+                thisdupes.clear();
+                thisdupes.add(firstForeignDupe);
+                merge(dest, null, thisdupes, recursionSettings);
+                /* ... and stop: in dest mode we merge into exactly one existing package. */
+                break;
+            }
+            /* No dest -> pick the first (topmost) package of the group as target and consolidate the rest into it. */
+            final PackageType target = thisdupes.remove(0);
+            merge(target, null, thisdupes, recursionSettings);
+        }
     }
 
     /**

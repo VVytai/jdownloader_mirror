@@ -6,9 +6,14 @@ import javax.swing.JScrollPane;
 import org.appwork.swing.MigPanel;
 import org.appwork.swing.components.ExtButton;
 import org.appwork.swing.exttable.utils.MinimumSelectionObserver;
+import org.appwork.utils.swing.EDTRunner;
 import org.jdownloader.gui.IconKey;
 import org.jdownloader.images.AbstractIcon;
 
+import jd.SecondLevelLaunch;
+import jd.controlling.AccountController;
+import jd.controlling.AccountControllerEvent;
+import jd.controlling.AccountControllerListener;
 import jd.gui.swing.jdgui.interfaces.SwitchPanel;
 import jd.plugins.Account;
 import net.miginfocom.swing.MigLayout;
@@ -41,9 +46,36 @@ public class AccountListPanel extends SwitchPanel {
         table.getSelectionModel().addListSelectionListener(new MinimumSelectionObserver(table, ra, 1));
 
         tb.add(buyButton = new ExtButton(new BuyAction(table)), "sg 2,height 26!");
-        tb.add(refreshButton = new ExtButton(new RefreshAction()), "sg 2,height 26!");
+        final RefreshAction refreshAction = new RefreshAction();
+        tb.add(refreshButton = new ExtButton(refreshAction), "sg 2,height 26!");
         add(new JScrollPane(table));
         add(tb);
+        /*
+         * Keep the toolbar refresh button enabled only while at least one enabled account exists. Since the action's
+         * enabled state is computed dynamically, we must re-evaluate it whenever the account list changes.
+         */
+        SecondLevelLaunch.ACCOUNTLIST_LOADED.executeWhenReached(new Runnable() {
+            @Override
+            public void run() {
+                AccountController.getInstance().getEventSender().addListener(new AccountControllerListener() {
+                    @Override
+                    public void onAccountControllerEvent(AccountControllerEvent event) {
+                        new EDTRunner() {
+                            @Override
+                            protected void runInEDT() {
+                                refreshAction.updateEnabledState();
+                            }
+                        };
+                    }
+                });
+                new EDTRunner() {
+                    @Override
+                    protected void runInEDT() {
+                        refreshAction.updateEnabledState();
+                    }
+                };
+            }
+        });
     }
 
     @Override

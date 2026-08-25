@@ -103,7 +103,7 @@ import jd.plugins.download.HashInfo;
 import jd.plugins.download.HashInfo.TYPE;
 import net.miginfocom.swing.MigLayout;
 
-@HostPlugin(revision = "$Revision: 52887 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53205 $", interfaceVersion = 3, names = {}, urls = {})
 public class OneFichierCom extends PluginForHost {
     /* Account properties */
     private final String        PROPERTY_ACCOUNT_USE_CDN_CREDITS                                  = "use_cdn_credits";
@@ -773,7 +773,7 @@ public class OneFichierCom extends PluginForHost {
         } else if (br.containsHTML("\">Warning \\! Without premium status, you can download only")) {
             logger.info("Seems like this is no premium account or it's vot valid anymore -> Disabling it");
             throw new AccountInvalidException("Account is not premium anymore");
-        } else if (account != null && br.containsHTML(">\\s*Usage of professional services is restricted and requires usage of CDN credits") && !this.isUsingCDNCredits(account)) {
+        } else if (br.containsHTML(">\\s*Usage of professional services is restricted and requires usage of CDN credits") || br.containsHTML("Accès restreint – professional infrastructure detected\\.\\s*<|This IP address has been identified as belonging to a server, proxy, VPN, relay network, or associated with abusive activity\\.?\\s*<")) {
             errorVPNUsed(account);
             /* This code should never be reached */
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
@@ -1707,12 +1707,27 @@ public class OneFichierCom extends PluginForHost {
         }
     }
 
-    /** Call this whenever an account was attempted to be used with a VPN/proxy/datacenter IP. */
-    private void errorVPNUsed(final Account account) throws AccountUnavailableException {
-        this.displayVPNWarning(account);
-        throw new AccountUnavailableException("VPN/proxy/datacenter IP not allowed; CDN credits needed for downloading", 5 * 60 * 1000l);
+    /**
+     * Call this whenever a VPN/proxy/datacenter IP was detected by 1fichier and thus 1fichier refuses a download.
+     *
+     * @throws PluginException
+     */
+    private void errorVPNUsed(final Account account) throws PluginException {
+        final String text = "VPN/proxy/datacenter IP not allowed; CDN credits needed for downloading";
+        if (account != null) {
+            /* Problem happened during account download attempt. */
+            this.displayVPNWarning(account);
+            throw new AccountUnavailableException(text, 5 * 60 * 1000l);
+        } else {
+            /* Problem happened during anonymous download attempt. */
+            throw new PluginException(LinkStatus.ERROR_IP_BLOCKED, text);
+        }
     }
 
+    /**
+     * Displays account related VPN info dialog. <br>
+     * Account must not be null when calling this!!
+     */
     private void displayVPNWarning(final Account account) {
         if (account == null) {
             throw new IllegalArgumentException();
@@ -1724,7 +1739,7 @@ public class OneFichierCom extends PluginForHost {
             }
             account.setProperty(PROPERTY_ACCOUNT_HAS_SHOWN_VPN_LOGIN_WARNING, System.currentTimeMillis());
         }
-        /* TODO: Maybe add extra errorhandling for "Premium GOLD" account owners in API mode. */
+        /* TODO: Maybe add extra error handling for "Premium GOLD" account owners in API mode. */
         final Thread thread = new Thread() {
             public void run() {
                 try {

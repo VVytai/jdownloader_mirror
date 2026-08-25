@@ -22,7 +22,6 @@ import java.util.Map;
 
 import org.appwork.storage.JSonStorage;
 import org.appwork.storage.TypeRef;
-import org.appwork.utils.StringUtils;
 import org.appwork.utils.Time;
 import org.appwork.utils.formatter.SizeFormatter;
 import org.appwork.utils.parser.UrlQuery;
@@ -39,7 +38,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.decrypter.ImagenetzDeCrawler;
 
-@HostPlugin(revision = "$Revision: 51193 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53205 $", interfaceVersion = 2, names = {}, urls = {})
 @PluginDependencies(dependencies = { ImagenetzDeCrawler.class })
 public class ImageNetzDe extends PluginForHost {
     public ImageNetzDe(PluginWrapper wrapper) {
@@ -107,31 +106,45 @@ public class ImageNetzDe extends PluginForHost {
         return AvailableStatus.TRUE;
     }
 
-    public static void parseFileInfo(final Browser br, final DownloadLink link) throws PluginException {
-        final String description = br.getRegex("<strong>\\s*Beschreibung:\\s*</strong>\\s*([^<>\"]+)\\s*<").getMatch(0);
+    /**
+     * Parses name and filesize of a single file from the current page.
+     *
+     * @return true if at least one piece of single-file information (name or filesize) was found.
+     */
+    public static boolean parseFileInfo(final Browser br, final DownloadLink link) {
         String filename = br.getRegex("class='dfname'>([^<>\"]+)<").getMatch(0);
         if (filename == null) {
             filename = br.getRegex("data-title=\"([^<>\"]+)\"").getMatch(0);
         }
-        if (filename == null && !br.containsHTML("/abuse\\.php\\?sk=")) {
-            /* E.g. https://www.imagenetz.de/contact */
-            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+        if (filename == null) {
+            /* Pre-download gate page (vor-download.php) */
+            filename = br.getRegex("<div class=\"ig-file-name\">([^<]+)</div>").getMatch(0);
         }
         String filesize = br.getRegex("<small>(\\d+([\\.,0-9]+)? MB)</small>").getMatch(0);
+        if (filesize == null) {
+            /* Pre-download gate page (vor-download.php) */
+            filesize = br.getRegex("<div class=\"ig-file-meta\">\\s*(\\d+(?:[\\.,]\\d+)?\\s*[A-Za-z]+)").getMatch(0);
+        }
+        boolean foundInfo = false;
         if (filename != null) {
             link.setName(filename.trim());
+            foundInfo = true;
         }
         if (filesize != null) {
             link.setDownloadSize(SizeFormatter.getSize(filesize));
+            foundInfo = true;
         }
-        if (description != null && StringUtils.isEmpty(link.getComment())) {
-            link.setComment(description);
-        }
+        return foundInfo;
     }
 
     @Override
     public void handleFree(final DownloadLink link) throws Exception, PluginException {
         requestFileInformation(link);
+        /* Handle pre download page */
+        final String nextUrl = br.getRegex("class=\"ig-gate-btn\" href=\"(/[^\"]+)\"").getMatch(0);
+        if (nextUrl != null) {
+            br.getPage(nextUrl);
+        }
         final String dllink = br.getRegex("(/files[^<>\"\\']+)").getMatch(0);
         if (dllink == null) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
@@ -166,6 +179,7 @@ public class ImageNetzDe extends PluginForHost {
         final String waitSecondsStr = br.getRegex("d='dlCD'><span>(\\d+)<").getMatch(0);
         final int waitSeconds;
         if (waitSecondsStr != null) {
+            logger.info("Found pre download wait seconds in html: " + waitSecondsStr);
             waitSeconds = Integer.parseInt(waitSecondsStr);
         } else {
             /* 2020-09-09: Static pre-download-waittime */
@@ -184,13 +198,5 @@ public class ImageNetzDe extends PluginForHost {
         }
         dl.setAllowFilenameFromURL(true);
         dl.startDownload();
-    }
-
-    @Override
-    public void reset() {
-    }
-
-    @Override
-    public void resetDownloadlink(DownloadLink link) {
     }
 }
