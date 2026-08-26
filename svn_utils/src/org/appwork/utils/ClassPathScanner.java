@@ -148,6 +148,7 @@ public abstract class ClassPathScanner<E extends Throwable> {
                                 }
                                 Class<?> cls = null;
                                 try {
+                                    System.out.println(classname);
                                     cls = Class.forName(classname);
                                 } catch (Throwable e) {
                                     continue;
@@ -190,7 +191,7 @@ public abstract class ClassPathScanner<E extends Throwable> {
         if (classname.startsWith("net.miginfocom.")) {
             return true;
         }
-          if (classname.startsWith("sun.")) {
+        if (classname.startsWith("sun.")) {
             return true;
         }
         if (classname.startsWith("org.slf4j.")) {

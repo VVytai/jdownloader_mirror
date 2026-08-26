@@ -375,11 +375,11 @@ public abstract class AbstractMergeToPackageAction<PackageType extends AbstractP
                     index = 0;
                     break;
                 }
-                final PackageSettings ps = new PackageSettings();
-                ps.setExpandPackage(final_expandPackage);
-                ps.setPackagePosition(index);
-                ps.setMergeSameNamedPackages(final_mergeSameNamedPackages);
-                controller.merge(newPackage, sel.getChildren(), selectedPackages, ps);
+                final PackageSettings settings = new PackageSettings();
+                settings.setExpandPackage(final_expandPackage);
+                settings.setPackagePosition(index);
+                settings.setMergeSameNamedPackages(final_mergeSameNamedPackages);
+                controller.moveIntoPackage(sel.getChildren(), selectedPackages, newPackage, settings);
                 return null;
             }
         });

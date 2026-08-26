@@ -13,6 +13,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
+import org.appwork.net.protocol.http.HTTPConstants;
+import org.appwork.storage.TypeRef;
+import org.appwork.utils.StringUtils;
+import org.appwork.utils.encoding.URLEncode;
+import org.appwork.utils.encoding.URLEncode.Decoder;
+import org.appwork.utils.formatter.SizeFormatter;
+import org.appwork.utils.parser.UrlQuery;
+import org.jdownloader.plugins.components.config.BunkrConfig;
+import org.jdownloader.plugins.config.PluginJsonConfig;
+
 import jd.PluginWrapper;
 import jd.http.Browser;
 import jd.http.Request;
@@ -31,17 +41,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.decrypter.BunkrAlbum;
 
-import org.appwork.net.protocol.http.HTTPConstants;
-import org.appwork.storage.TypeRef;
-import org.appwork.utils.StringUtils;
-import org.appwork.utils.encoding.URLEncode;
-import org.appwork.utils.encoding.URLEncode.Decoder;
-import org.appwork.utils.formatter.SizeFormatter;
-import org.appwork.utils.parser.UrlQuery;
-import org.jdownloader.plugins.components.config.BunkrConfig;
-import org.jdownloader.plugins.config.PluginJsonConfig;
-
-@HostPlugin(revision = "$Revision: 52884 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53209 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { BunkrAlbum.class })
 public class Bunkr extends PluginForHost {
     public Bunkr(PluginWrapper wrapper) {
@@ -513,6 +513,7 @@ public class Bunkr extends PluginForHost {
     }
 
     private String getDirecturlFromSingleFileAvailablecheck(final DownloadLink link, String singleFileURL, final boolean accessURL) throws PluginException, IOException {
+        final String lastDirectURL = getLastGrabbedDirectURL(link);
         setDirectURL(link, null);
         if (accessURL) {
             br.getPage(singleFileURL);
@@ -553,12 +554,14 @@ public class Bunkr extends PluginForHost {
         }
         final Regex safeFileInfoFromHTML = br.getRegex("Debug: Original=(.+), Size=(\\d+)[\r\n]");
         String filename = null;
-        if (safeFileInfoFromHTML.patternFind()) {
+        if (safeFileInfoFromHTML.patternFind() && !safeFileInfoFromHTML.getMatch(0).contains("cdn-cgi/l/email-protection")) {
             /**
              * 2025-03-04: html contains "debug information" with original file name and file size as bytes <br>
              * This is the most trustworthy file information source we can get!
              */
-            final String safeFilenameFromHTML = safeFileInfoFromHTML.getMatch(0);
+            String safeFilenameFromHTML = safeFileInfoFromHTML.getMatch(0);
+            // incomplete replacement, so we skip in this branch in this case
+            // safeFilenameFromHTML = safeFilenameFromHTML.replaceFirst("<a href=\"/cdn-cgi/l/email-protection[^>]*>", "@");
             setFilename(link, safeFilenameFromHTML, false, true);
             final String filesizeBytesStr = safeFileInfoFromHTML.getMatch(1);
             /* Byte-precise file size */
@@ -608,7 +611,7 @@ public class Bunkr extends PluginForHost {
         if (videoStreamDirecturl != null) {
             link.setProperty(PROPERTY_LAST_GRABBED_VIDEO_STREAM_DIRECTURL, videoStreamDirecturl);
         }
-        final String imageFullsizeViewDirecturl = br.getRegex("<a[^>]*href=\"(https?://[^\"]+)\"[^>]*>\\s*Enlarge image").getMatch(0);
+        final String imageFullsizeViewDirecturl = br.getRegex("<a[^>]*href\\s*=\\s*\"(https?://[^\"]+)\"[^>]*>\\s*Enlarge image").getMatch(0);
         if (imageFullsizeViewDirecturl != null) {
             link.setProperty(PROPERTY_LAST_GRABBED_IMAGE_FULLSIZE_VIEW_DIRECTURL, imageFullsizeViewDirecturl);
         }
@@ -617,16 +620,14 @@ public class Bunkr extends PluginForHost {
             /* We aren't trying to start a download atm -> No need to proceed to next step -> Speeds up linkcheck */
             return null;
         }
-        fastLane: {
-            try {
-                final String ret = this.parseAndSetJsCDNDirectURL(link, br, filename);
-                if (ret != null) {
-                    return ret;
-                }
-            } catch (final PluginException e) {
-                /* Silent ignore to allow fallback to upper handling */
-                logger.info("Failed to find direct download link on file view page -> Official download button handling is needed");
+        fastLane: try {
+            final String ret = this.parseAndSetJsCDNDirectURL(link, br, filename);
+            if (ret != null) {
+                return ret;
             }
+        } catch (final PluginException e) {
+            /* Silent ignore to allow fallback to upper handling */
+            logger.info("Failed to find direct download link on file view page -> Official download button handling is needed");
         }
         /* 2024-02-16: New: Additional step required to find official downloadurl */
         final String nextStepURL = br.getRegex("(https?://(?:get|dl)\\.[^/]+/file/\\d+)").getMatch(0);
@@ -703,41 +704,33 @@ public class Bunkr extends PluginForHost {
             brc.postPageRaw("/api/_001_v2", "{\"id\":\"" + internalFileID + "\"}");
             Map<String, Object> apiResponse = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
             rawURL = (String) apiResponse.get("mediafiles") + (String) apiResponse.get("path");
-            final String path = new URL(rawURL).getPath();
+            final URL url = new URL(rawURL);
+            String path = url.getPath();
+            String filename = new Regex(path, "/([^/]+)$").getMatch(0);
             brc = br.cloneBrowser();
-            final Request fetch = brc.createGetRequest(SIGN_SERVICE_URL + "?path=" + path);
+            final Request fetch = brc.createGetRequest(SIGN_SERVICE_URL + "?path=" + URLEncode.encodeURIComponent(path));
             fetch.getHeaders().put(HTTPConstants.HEADER_REQUEST_ACCEPT, "*/*");
             brc.getPage(fetch);
             response = restoreFromString(fetch.getHtmlCode(), TypeRef.MAP);
+            path = path.replace(filename, URLEncode.encodeURIComponent(filename));
+            rawURL = url.getProtocol() + "://" + url.getHost() + path;
         }
         if (response == null) {
-            /* 2026-06-03: This handling might be outdated, see function parseAndSetJsCDNDirectURL !!! */
-            String jsCDN = br.getRegex("var\\s*jsCDN\\s*=\\s*(\"https?:[^\"]+\")").getMatch(0);
-            String jsSlug = br.getRegex("var\\s*jsSlug\\s*=\\s*(\"[^\"]+\")").getMatch(0);
-            String signUrl = br.getRegex("var\\s*signUrl\\s*=\\s*(\"[^\"]+\")").getMatch(0);
-            if (!StringUtils.isAllNotEmpty(jsCDN, jsSlug, signUrl)) {
-                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-            }
-            jsCDN = restoreFromString(jsCDN, TypeRef.STRING);
-            jsSlug = restoreFromString(jsSlug, TypeRef.STRING);
-            signUrl = restoreFromString(signUrl, TypeRef.STRING);
-            rawURL = jsCDN.replaceFirst("([/]+$)", "") + "/storage/media/" + jsSlug;
-            final String path = new URL(rawURL).getPath();
-            final Browser brc = br.cloneBrowser();
-            final Request fetch = brc.createGetRequest(signUrl + "?path=" + path);
-            fetch.getHeaders().put(HTTPConstants.HEADER_REQUEST_ACCEPT, "*/*");
-            brc.getPage(fetch);
-            response = restoreFromString(fetch.getHtmlCode(), TypeRef.MAP);
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
         final String token = (String) response.get("token");
         final Object ex = response.get("ex");
         if (StringUtils.isEmpty(token) || ex == null) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
-        String directurl = rawURL + "?token=" + token + "&ex=" + ex;
+        String directurl = rawURL + "?token=" + token;
+        /* n parameter is no longer optional */
         if (!StringUtils.isEmpty(fileName)) {
-            directurl = directurl + "&n=" + URLEncode.encodeURIComponent(fileName);
+            directurl += "&n=" + URLEncode.encodeURIComponent(fileName);
+        } else {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
+        directurl += "&ex=" + ex;
         setDirectURL(link, directurl);
         return directurl;
     }
@@ -753,9 +746,11 @@ public class Bunkr extends PluginForHost {
         jsCDN = restoreFromString(jsCDN, TypeRef.STRING);
         jsSlug = restoreFromString(jsSlug, TypeRef.STRING);
         signUrl = restoreFromString(signUrl, TypeRef.STRING);
-        final String path = new URL(jsCDN).getPath();
+        final URL url = new URL(jsCDN);
+        String path = url.getPath();
+        String filename = new Regex(path, "/([^/]+)$").getMatch(0);
         final Browser brc = br.cloneBrowser();
-        final Request fetch = brc.createGetRequest(signUrl + "?path=" + path);
+        final Request fetch = brc.createGetRequest(signUrl + "?path=" + URLEncode.encodeURIComponent(path));
         fetch.getHeaders().put(HTTPConstants.HEADER_REQUEST_ACCEPT, "*/*");
         brc.getPage(fetch);
         final Map<String, Object> response = restoreFromString(fetch.getHtmlCode(), TypeRef.MAP);
@@ -764,11 +759,15 @@ public class Bunkr extends PluginForHost {
         if (StringUtils.isEmpty(token) || ex == null) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
-        String directurl = jsCDN + "?token=" + token + "&ex=" + ex;
-        /* 2026-06-03: n parameter is optional. Server will return value set as n parameter in Content-Disposition header. */
+        path = path.replace(filename, URLEncode.encodeURIComponent(filename));
+        String directurl = url.getProtocol() + "://" + url.getHost() + path + "?token=" + token;
+        /* n parameter is no longer optional */
         if (!StringUtils.isEmpty(fileName)) {
             directurl += "&n=" + URLEncode.encodeURIComponent(fileName);
+        } else {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
+        directurl += "&ex=" + ex;
         setDirectURL(link, directurl);
         return directurl;
     }

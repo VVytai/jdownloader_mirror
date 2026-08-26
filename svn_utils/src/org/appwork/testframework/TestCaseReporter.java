@@ -14,6 +14,7 @@ package org.appwork.testframework;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 import org.appwork.loggingv3.LogV3;
@@ -34,6 +35,12 @@ public final class TestCaseReporter {
     public static final String REPORT_EXPORT_FILE_PROPERTY = "awtest.report.export.file";
     /** System property: when {@code true}, do not open the HTML report in the default browser after the run. */
     public static final String NO_OPEN_REPORT_PROPERTY     = "awtest.noOpenReport";
+    /** HTML report file name written to the reports dir and Dist. */
+    public static final String REPORT_HTML_FILENAME       = "test-report.html";
+    /** JSON report file name written next to the HTML report. */
+    public static final String REPORT_JSON_FILENAME       = "test-report.json";
+    /** Local-link label for BuildHelper {@code builds/{rev}/} (only after snapshot). */
+    public static final String LOCAL_LINK_BUILD_ARCHIVE   = "Build archive";
 
     private static final ThreadLocal<TestClassReport> CURRENT_CLASS = new ThreadLocal<TestClassReport>();
     private static TestRunReport                      RUN_REPORT;
@@ -64,6 +71,160 @@ public final class TestCaseReporter {
         if (REPORT_DIR != null && !REPORT_DIR.exists()) {
             REPORT_DIR.mkdirs();
         }
+    }
+
+    /**
+     * Sets quick-link paths shown at the top of the HTML report (Dist, project, build archive, …). Call after {@link #beginRun}.
+     */
+    public static void setLocalLinks(final List<TestReportLocalLink> links) {
+        if (RUN_REPORT == null) {
+            return;
+        }
+        RUN_REPORT.setLocalLinks(links);
+    }
+
+    /**
+     * Appends a single local quick link when a run is active and {@code path} is non-empty.
+     */
+    public static void addLocalLink(final String label, final File path) {
+        if (RUN_REPORT == null || StringUtils.isEmpty(label) || path == null) {
+            return;
+        }
+        List<TestReportLocalLink> links = RUN_REPORT.getLocalLinks();
+        if (links == null) {
+            links = new ArrayList<TestReportLocalLink>();
+            RUN_REPORT.setLocalLinks(links);
+        }
+        links.add(new TestReportLocalLink(label, path.getAbsolutePath()));
+    }
+
+    /**
+     * IDE runners: workspace, application root, reports folder as HTML quick links.
+     */
+    public static void attachIdeLocalLinks() {
+        if (RUN_REPORT == null) {
+            return;
+        }
+        final ArrayList<TestReportLocalLink> links = new ArrayList<TestReportLocalLink>();
+        try {
+            final File workspace = AWTest.getWorkspace();
+            if (workspace != null) {
+                links.add(new TestReportLocalLink("Workspace", workspace.getAbsolutePath()));
+            }
+        } catch (Throwable ignore) {
+        }
+        try {
+            final File appRoot = Application.getResource("");
+            if (appRoot != null) {
+                links.add(new TestReportLocalLink("Application", appRoot.getAbsolutePath()));
+            }
+        } catch (Throwable ignore) {
+        }
+        if (REPORT_DIR != null) {
+            links.add(new TestReportLocalLink("Reports", REPORT_DIR.getAbsolutePath()));
+        }
+        RUN_REPORT.setLocalLinks(links);
+    }
+
+    /**
+     * After BuildHelper has snapshotted Dist into {@code builds/{rev}/}, inject a {@link #LOCAL_LINK_BUILD_ARCHIVE} link into existing Dist
+     * (and cache) reports. No-op when {@code buildArchiveDir} is missing — the link must only appear when that snapshot actually happened.
+     *
+     * @param buildArchiveDir
+     *            BuildHelper build directory ({@code …/builds/{revision}/})
+     * @param distRoots
+     *            Dist folders that may contain {@link #REPORT_JSON_FILENAME}
+     */
+    public static void enrichReportsWithBuildArchive(final File buildArchiveDir, final Iterable<File> distRoots) {
+        if (buildArchiveDir == null || !buildArchiveDir.isDirectory()) {
+            return;
+        }
+        // Only treat as a real BuildHelper archive once binaries/ exists (created by snapshotAntResults).
+        if (!new File(buildArchiveDir, "binaries").isDirectory()) {
+            return;
+        }
+        final HashSet<File> jsonFiles = new HashSet<File>();
+        if (distRoots != null) {
+            for (final File dist : distRoots) {
+                if (dist == null) {
+                    continue;
+                }
+                if (dist.isDirectory()) {
+                    final File json = new File(dist, REPORT_JSON_FILENAME);
+                    if (json.isFile()) {
+                        jsonFiles.add(json);
+                    }
+                }
+            }
+        }
+        for (final File jsonFile : jsonFiles) {
+            try {
+                enrichOneReportFileWithBuildArchive(jsonFile, buildArchiveDir);
+            } catch (Throwable e) {
+                LogV3.warning("TestCaseReporter: could not inject Build archive link into " + jsonFile + ": " + e.getMessage());
+            }
+        }
+    }
+
+    private static void enrichOneReportFileWithBuildArchive(final File jsonFile, final File buildArchiveDir) throws Exception {
+        final String json = IO.readFileToString(jsonFile);
+        final TestRunReport report = FlexiUtils.jsonToObject(json, new SimpleTypeRef<TestRunReport>(TestRunReport.class));
+        if (report == null) {
+            return;
+        }
+        upsertLocalLink(report, LOCAL_LINK_BUILD_ARCHIVE, buildArchiveDir.getAbsolutePath());
+        writeReportFiles(jsonFile.getParentFile(), report);
+        // Also refresh the post-build cache copy referenced in localLinks (Reports).
+        final List<TestReportLocalLink> links = report.getLocalLinks();
+        if (links != null) {
+            for (final TestReportLocalLink link : links) {
+                if (link == null || !"Reports".equals(link.getLabel()) || StringUtils.isEmpty(link.getPath())) {
+                    continue;
+                }
+                final File reportsDir = new File(link.getPath());
+                if (reportsDir.isDirectory() && !reportsDir.equals(jsonFile.getParentFile())) {
+                    writeReportFiles(reportsDir, report);
+                }
+            }
+        }
+        AWTest.logInfoAnyway("Test report Build archive link: " + buildArchiveDir.getAbsolutePath());
+    }
+
+    private static void writeReportFiles(final File dir, final TestRunReport report) throws Exception {
+        if (dir == null || report == null) {
+            return;
+        }
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        IO.secureWrite(new File(dir, REPORT_JSON_FILENAME), FlexiUtils.serializeToPrettyJson(report), SYNC.META_AND_DATA);
+        IO.secureWrite(new File(dir, REPORT_HTML_FILENAME), TestReportHtmlWriter.toHtml(report), SYNC.META_AND_DATA);
+    }
+
+    private static void upsertLocalLink(final TestRunReport report, final String label, final String path) {
+        List<TestReportLocalLink> links = report.getLocalLinks();
+        if (links == null) {
+            links = new ArrayList<TestReportLocalLink>();
+            report.setLocalLinks(links);
+        }
+        for (final TestReportLocalLink existing : links) {
+            if (existing != null && label.equals(existing.getLabel())) {
+                existing.setPath(path);
+                return;
+            }
+        }
+        int insertAt = 0;
+        for (int i = 0; i < links.size(); i++) {
+            final TestReportLocalLink existing = links.get(i);
+            if (existing == null) {
+                continue;
+            }
+            final String lab = existing.getLabel();
+            if ("Dist".equals(lab) || "Project".equals(lab)) {
+                insertAt = i + 1;
+            }
+        }
+        links.add(insertAt, new TestReportLocalLink(label, path));
     }
 
     /**
@@ -219,9 +380,9 @@ public final class TestCaseReporter {
                 if (!REPORT_DIR.exists()) {
                     REPORT_DIR.mkdirs();
                 }
-                final File jsonFile = new File(REPORT_DIR, "test-report.json");
+                final File jsonFile = new File(REPORT_DIR, REPORT_JSON_FILENAME);
                 IO.secureWrite(jsonFile, FlexiUtils.serializeToPrettyJson(RUN_REPORT), SYNC.META_AND_DATA);
-                htmlFile = new File(REPORT_DIR, "test-report.html");
+                htmlFile = new File(REPORT_DIR, REPORT_HTML_FILENAME);
                 IO.secureWrite(htmlFile, TestReportHtmlWriter.toHtml(RUN_REPORT), SYNC.META_AND_DATA);
                 AWTest.logInfoAnyway("Test report: " + htmlFile.getAbsolutePath());
                 openHtmlReportInBrowser(htmlFile);

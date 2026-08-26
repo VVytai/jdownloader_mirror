@@ -71,8 +71,6 @@ import org.appwork.remoteapi.annotations.ApiDocExample;
 import org.appwork.storage.DocsGenerator;
 import org.appwork.storage.StorableAvailableSince;
 import org.appwork.storage.StorableConditionalType;
-import org.appwork.storage.StorableConditionalType2;
-import org.appwork.storage.StorableConditionalType3;
 import org.appwork.storage.StorableDateFormat;
 import org.appwork.storage.StorableDeprecatedSince;
 import org.appwork.storage.StorableDoc;
@@ -111,9 +109,7 @@ import org.appwork.storage.simplejson.ValueType;
 import org.appwork.storage.simplejson.mapper.ClassCache;
 import org.appwork.storage.simplejson.mapper.Getter;
 import org.appwork.storage.simplejson.mapper.Setter;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator1;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator2;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator3;
+import org.appwork.storage.validator.classvalidator.StorableClassValidator;
 import org.appwork.utils.CompareUtils;
 import org.appwork.utils.DebugMode;
 import org.appwork.utils.Joiner;
@@ -134,6 +130,13 @@ public class FlexiJSonMapper {
      *
      */
     private static final String                     TYPE          = "Type: ";
+    /**
+     * Annotation types that {@link #addComment(FlexiJSonComments, Object, FlexiMapperTags, DefaultObjectToJsonContext, Object)} may turn
+     * into docs comments. Collected via {@link ReflectionUtils#getAnnotationsByTypes} so {@link java.lang.annotation.Repeatable} instances
+     * are unwrapped (unlike {@link java.lang.reflect.AnnotatedElement#getAnnotations()}).
+     */
+    @SuppressWarnings("unchecked")
+    private static final Class<? extends Annotation>[] COMMENT_ANNOTATION_TYPES = new Class[] { ApiDoc.class, StorableSee.class, StorableLink.class, StorableValidateNotNull.class, StorableClassValidator.class, StorableValidateMandatoryInJson.class, ApiDocExample.class, StorableDoc.class, StorableExample.class, StorableUnique.class, StorableTypeAlternatives.class, StorableDeprecatedSince.class, StorableAvailableSince.class, StorableDateFormat.class };
     private static final ArrayList<FlexiTypeMapper> DEFAULTMAPPER = new ArrayList<FlexiTypeMapper>();
     static {
         DEFAULTMAPPER.add(new DateMapper());
@@ -788,7 +791,7 @@ public class FlexiJSonMapper {
         }
         try {
             final Field field = cType.raw.getField(((Enum) obj).name());
-            for (final Annotation an : field.getAnnotations()) {
+            for (final Annotation an : ReflectionUtils.getAnnotationsByTypes(field, COMMENT_ANNOTATION_TYPES)) {
                 comments = this.addComment(comments, an, null, context, obj);
             }
         } catch (final NoSuchFieldException e) {
@@ -1017,7 +1020,7 @@ public class FlexiJSonMapper {
     protected FlexiJSonComments addCommentByAnnotations(final Getter g, Object obj, FlexiJSonComments comments, final Class<?> cls, DefaultObjectToJsonContext context) throws FlexiMapperException {
         final Class<?> targetClass = ReflectionUtils.getRaw(g.type);
         if (targetClass != null) {
-            for (final Annotation a : targetClass.getAnnotations()) {
+            for (final Annotation a : ReflectionUtils.getAnnotationsByTypes(targetClass, COMMENT_ANNOTATION_TYPES)) {
                 comments = this.addComment(comments, a, null, context, obj);
             }
         }
@@ -1027,12 +1030,12 @@ public class FlexiJSonMapper {
                 try {
                     if (ct.raw != null) {
                         final Method method = ct.raw.getDeclaredMethod(g.getMethod().getName(), g.getMethod().getParameterTypes());
-                        for (final Annotation a : method.getAnnotations()) {
+                        for (final Annotation a : ReflectionUtils.getAnnotationsByTypes(method, COMMENT_ANNOTATION_TYPES)) {
                             comments = this.addComment(comments, a, null, context, obj);
                         }
                         if (!ct.raw.isInterface()) {
                             final Field field = ct.raw.getDeclaredField(g.getKey());
-                            for (final Annotation a : field.getAnnotations()) {
+                            for (final Annotation a : ReflectionUtils.getAnnotationsByTypes(field, COMMENT_ANNOTATION_TYPES)) {
                                 comments = this.addComment(comments, a, null, context, obj);
                             }
                         }
@@ -1169,23 +1172,9 @@ public class FlexiJSonMapper {
         if (anno instanceof StorableValidateNotNull) {
             comments = this.pushComment(comments, "Constraint: Must not be null", FlexiMapperTags.DOCS);
         }
-        if (anno instanceof StorableClassValidator1) {
+        if (anno instanceof StorableClassValidator) {
             try {
-                comments = this.pushComment(comments, ((StorableClassValidator1) anno).cls().newInstance().getDocsDescription(((StorableClassValidator1) anno).parameter(), anno), FlexiMapperTags.DOCS);
-            } catch (final Exception e) {
-                LogV3.log(e);
-            }
-        }
-        if (anno instanceof StorableClassValidator2) {
-            try {
-                comments = this.pushComment(comments, ((StorableClassValidator2) anno).cls().newInstance().getDocsDescription(((StorableClassValidator2) anno).parameter(), anno), FlexiMapperTags.DOCS);
-            } catch (final Exception e) {
-                LogV3.log(e);
-            }
-        }
-        if (anno instanceof StorableClassValidator3) {
-            try {
-                comments = this.pushComment(comments, ((StorableClassValidator3) anno).cls().newInstance().getDocsDescription(((StorableClassValidator3) anno).parameter(), anno), FlexiMapperTags.DOCS);
+                comments = this.pushComment(comments, ((StorableClassValidator) anno).cls().newInstance().getDocsDescription(((StorableClassValidator) anno).parameter(), anno), FlexiMapperTags.DOCS);
             } catch (final Exception e) {
                 LogV3.log(e);
             }
@@ -1401,7 +1390,7 @@ public class FlexiJSonMapper {
             return;
         }
         FlexiJSonComments comments = null;
-        for (final Annotation a : cType.raw.getAnnotations()) {
+        for (final Annotation a : ReflectionUtils.getAnnotationsByTypes(cType.raw, COMMENT_ANNOTATION_TYPES)) {
             comments = this.addComment(comments, a, null, context, obj);
         }
         if (comments != null) {
@@ -2267,38 +2256,6 @@ public class FlexiJSonMapper {
                     final List<StorableConditionalType> annos = cc.getAnnotations(key, StorableConditionalType.class);
                     if (annos != null && annos.size() > 0) {
                         for (final StorableConditionalType a : annos) {
-                            final org.appwork.moncompare.Condition condition = FlexiCondition.parse(a.condition());
-                            condition.setTypeHandler(Arrays.asList(new FlexiTypeHandler()));
-                            if (condition.matches(obj)) {
-                                if (StringUtils.isNotEmpty(a.type())) {
-                                    return CompiledType.create(new TypeBuilder().parse(a.type()), cType.type);
-                                } else {
-                                    return CompiledType.create(a.cls(), cType.type);
-                                }
-                            }
-                        }
-                    }
-                }
-                {
-                    final List<StorableConditionalType2> annos = cc.getAnnotations(key, StorableConditionalType2.class);
-                    if (annos != null && annos.size() > 0) {
-                        for (final StorableConditionalType2 a : annos) {
-                            final org.appwork.moncompare.Condition condition = FlexiCondition.parse(a.condition());
-                            condition.setTypeHandler(Arrays.asList(new FlexiTypeHandler()));
-                            if (condition.matches(obj)) {
-                                if (StringUtils.isNotEmpty(a.type())) {
-                                    return CompiledType.create(new TypeBuilder().parse(a.type()), cType.type);
-                                } else {
-                                    return CompiledType.create(a.cls(), cType.type);
-                                }
-                            }
-                        }
-                    }
-                }
-                {
-                    final List<StorableConditionalType3> annos = cc.getAnnotations(key, StorableConditionalType3.class);
-                    if (annos != null && annos.size() > 0) {
-                        for (final StorableConditionalType3 a : annos) {
                             final org.appwork.moncompare.Condition condition = FlexiCondition.parse(a.condition());
                             condition.setTypeHandler(Arrays.asList(new FlexiTypeHandler()));
                             if (condition.matches(obj)) {

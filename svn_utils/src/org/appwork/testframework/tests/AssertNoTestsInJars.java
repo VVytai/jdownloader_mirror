@@ -39,8 +39,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -48,6 +50,7 @@ import org.appwork.exceptions.WTFException;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.PostBuildTestInterface;
 import org.appwork.testframework.TestCaseReporter;
+import org.appwork.testframework.TestTag;
 import org.appwork.utils.ClassPathScanner;
 import org.appwork.utils.Files;
 import org.appwork.utils.ZipContentHasher;
@@ -62,6 +65,11 @@ public class AssertNoTestsInJars implements PostBuildTestInterface {
     @Override
     public boolean isSkipOnUnchangedDependencies() {
         return true;
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return Collections.emptySet();
     }
 
     @Override

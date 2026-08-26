@@ -23,18 +23,20 @@ import org.appwork.storage.StorableExample;
  * Full test run report (all test classes in one IDE or post-build execution).
  */
 @StorableDoc("Full test run report written as JSON and rendered to HTML.")
-@StorableExample("{\"runnerLabel\":\"PostBuild\",\"buildId\":\"UpdateProviderNG_UpdateServer\",\"project\":\"UpdateProviderNG\",\"setup\":\"UpdateServer\",\"startedAt\":1700000000000,\"finishedAt\":1700000001000,\"classes\":[{\"className\":\"org.example.MyTest\",\"classStatus\":\"SUCCESS\",\"cases\":[]}]}")
+@StorableExample("{\"runnerLabel\":\"PostBuild\",\"buildId\":\"UpdateProviderNG_UpdateServer\",\"project\":\"UpdateProviderNG\",\"setup\":\"UpdateServer\",\"startedAt\":1700000000000,\"finishedAt\":1700000001000,\"localLinks\":[{\"label\":\"Dist\",\"path\":\"C:\\\\workspace\\\\UpdateProviderNG\\\\dist\"},{\"label\":\"Project\",\"path\":\"C:\\\\workspace\\\\UpdateProviderNG\"}],\"classes\":[{\"className\":\"org.example.MyTest\",\"classStatus\":\"SUCCESS\",\"cases\":[]}]}")
 public class TestRunReport implements Storable {
-    private String                runnerLabel;
+    private String                     runnerLabel;
     /** Build cache id from {@code -buildid=} (e.g. {@code UpdateProviderNG_UpdateServer}). */
-    private String                buildId;
+    private String                     buildId;
     /** Project name from {@code -projectinfo=} (first token). */
-    private String                project;
+    private String                     project;
     /** Setup parameter from {@code -projectinfo=} (remainder after first token). */
-    private String                setup;
-    private long                  startedAt;
-    private long                  finishedAt;
-    private List<TestClassReport> classes = new ArrayList<TestClassReport>();
+    private String                     setup;
+    private long                       startedAt;
+    private long                       finishedAt;
+    /** Quick links to Dist, project, build archive, workspace, etc. (file:// in HTML). */
+    private List<TestReportLocalLink>  localLinks = new ArrayList<TestReportLocalLink>();
+    private List<TestClassReport>      classes    = new ArrayList<TestClassReport>();
 
     public TestRunReport() {
     }
@@ -85,6 +87,14 @@ public class TestRunReport implements Storable {
 
     public void setFinishedAt(final long finishedAt) {
         this.finishedAt = finishedAt;
+    }
+
+    public List<TestReportLocalLink> getLocalLinks() {
+        return this.localLinks;
+    }
+
+    public void setLocalLinks(final List<TestReportLocalLink> localLinks) {
+        this.localLinks = localLinks != null ? localLinks : new ArrayList<TestReportLocalLink>();
     }
 
     public List<TestClassReport> getClasses() {

@@ -16,8 +16,17 @@
 package jd.plugins.hoster;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+
+import org.appwork.net.protocol.http.HTTPConstants;
+import org.appwork.storage.TypeRef;
+import org.appwork.utils.StringUtils;
+import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperHostPluginRecaptchaV2;
+import org.jdownloader.plugins.components.antiDDoSForHost;
 
 import jd.PluginWrapper;
 import jd.http.Browser;
@@ -30,6 +39,7 @@ import jd.parser.html.Form;
 import jd.plugins.Account;
 import jd.plugins.Account.AccountType;
 import jd.plugins.AccountInfo;
+import jd.plugins.AccountInvalidException;
 import jd.plugins.AccountRequiredException;
 import jd.plugins.AccountUnavailableException;
 import jd.plugins.DownloadLink;
@@ -38,24 +48,53 @@ import jd.plugins.HostPlugin;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-import org.appwork.storage.TypeRef;
-import org.appwork.utils.StringUtils;
-import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperHostPluginRecaptchaV2;
-import org.jdownloader.plugins.components.antiDDoSForHost;
-
-@HostPlugin(revision = "$Revision: 52852 $", interfaceVersion = 2, names = { "livemixtapes.com" }, urls = { "https?://((?:\\w+\\.)?livemixtapes\\.com/(download(?:/mp3)?/\\d+/[a-z0-9\\-]+\\.html|mixtape/[^/]+)|club\\.livemixtapes\\.com/play/\\d+)" })
+@HostPlugin(revision = "$Revision: 53220 $", interfaceVersion = 2, names = {}, urls = {})
 public class LiveMixTapesCom extends antiDDoSForHost {
-    private static final String               TYPE_REDIRECTLINK  = "https?://(www\\.)?livemixtap\\.es/[a-z0-9]+";
-    private static final String               TYPE_DIRECTLINK    = "https?://club\\.livemixtapes\\.com/play/\\d+";
-    private static final String               TYPE_ALBUM         = "https?://(?:www\\.)?livemixtapes\\.com/download/\\d+.*?";
-    private static final String               TYPE_MIXTAPE       = "https?://(?:www\\.)?livemixtapes\\.com/mixtape/([^/]+)";
-    protected static HashMap<String, Cookies> antiCaptchaCookies = new HashMap<String, Cookies>();
-    private final String                      PROPERTY_DIRECTURL = "directurl";
+    private static final String               TYPE_REDIRECTLINK             = "https?://(www\\.)?livemixtap\\.es/[a-z0-9]+";
+    private static final String               TYPE_DIRECTLINK               = "https?://club\\.livemixtapes\\.com/play/\\d+";
+    private static final String               TYPE_ALBUM                    = "https?://(?:www\\.)?livemixtapes\\.com/download/\\d+.*?";
+    private static final String               TYPE_MIXTAPE                  = "https?://(?:www\\.)?livemixtapes\\.com/mixtape/([^/]+)";
+    protected static HashMap<String, Cookies> antiCaptchaCookies            = new HashMap<String, Cookies>();
+    private final String                      PROPERTY_DIRECTURL            = "directurl";
+    private static final String               PROPERTY_ACCOUNT_ACCESS_TOKEN = "access_token";
+    private static final String               PROPERTY_ACCOUNT_USER_ID      = "user_id";
 
     public LiveMixTapesCom(PluginWrapper wrapper) {
         super(wrapper);
         // Currently there is only support for free accounts
-        this.enablePremium("http://www.livemixtapes.com/signup.html");
+        this.enablePremium("https://" + getHost() + "/premium");
+    }
+
+    public static List<String[]> getPluginDomains() {
+        final List<String[]> ret = new ArrayList<String[]>();
+        // each entry in List<String[]> will result in one PluginForHost, Plugin.getHost() will return String[0]->main domain
+        ret.add(new String[] { "livemixtapes.com" });
+        return ret;
+    }
+
+    public static String[] getAnnotationNames() {
+        return buildAnnotationNames(getPluginDomains());
+    }
+
+    @Override
+    public String[] siteSupportedNames() {
+        return buildSupportedNames(getPluginDomains());
+    }
+
+    public static String[] getAnnotationUrls() {
+        return buildAnnotationUrls(getPluginDomains());
+    }
+
+    private static final Pattern PATTERN_DOWNLOAD = Pattern.compile("/download(?:/mp3)?/(\\d+)/([a-z0-9\\-]+)\\.html");
+    private static final Pattern PATTERN_MIXTAPE  = Pattern.compile("/mixtape/([^/]+)");
+    private static final Pattern PATTERN_PLAY     = Pattern.compile("/play/(\\d+)");
+
+    public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
+        final List<String> ret = new ArrayList<String>();
+        for (final String[] domains : pluginDomains) {
+            ret.add("https?://(?:[a-z0-9]+\\.)?" + buildHostsPatternPart(domains) + "/(" + PATTERN_DOWNLOAD.pattern().substring(1) + "|" + PATTERN_MIXTAPE.pattern().substring(1) + "|" + PATTERN_PLAY.pattern().substring(1) + ")");
+        }
+        return ret.toArray(new String[0]);
     }
 
     @Override
@@ -216,8 +255,11 @@ public class LiveMixTapesCom extends antiDDoSForHost {
                 final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
                 dllink = (String) response.get("download_url");
                 if (dllink == null) {
-                    if ("Unauthorized".equals(response.get("message"))) {
+                    final String msg = (String) response.get("message");
+                    if ("Unauthorized".equals(msg)) {
                         throw new AccountRequiredException();
+                    } else if (!StringUtils.isEmpty(msg)) {
+                        throw new PluginException(LinkStatus.ERROR_FATAL, msg);
                     }
                     throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
                 }
@@ -266,11 +308,14 @@ public class LiveMixTapesCom extends antiDDoSForHost {
 
     @Override
     public AccountInfo fetchAccountInfo(final Account account) throws Exception {
-        AccountInfo ai = new AccountInfo();
-        login(account);
+        final AccountInfo ai = new AccountInfo();
+        final Map<String, Object> user = login(account, true);
         ai.setUnlimitedTraffic();
-        /* 2019-07-29: As far as I know there are no 'premium' accounts available! */
-        account.setType(AccountType.FREE);
+        if (user != null && Boolean.TRUE.equals(user.get("premium"))) {
+            account.setType(AccountType.PREMIUM);
+        } else {
+            account.setType(AccountType.FREE);
+        }
         return ai;
     }
 
@@ -312,17 +357,17 @@ public class LiveMixTapesCom extends antiDDoSForHost {
 
     @Override
     public String getAGBLink() {
-        return "https://www.livemixtapes.com/contact.html";
+        return "https://" + getHost() + "/terms-of-use";
     }
 
     @Override
     public int getMaxSimultanFreeDownloadNum() {
-        return -1;
+        return Integer.MAX_VALUE;
     }
 
     @Override
     public int getMaxSimultanPremiumDownloadNum() {
-        return -1;
+        return Integer.MAX_VALUE;
     }
 
     @Override
@@ -333,53 +378,64 @@ public class LiveMixTapesCom extends antiDDoSForHost {
     @Override
     public void handlePremium(final DownloadLink link, final Account account) throws Exception {
         /* First login, then availablecheck --> Avoids captchas in availablecheck! */
-        login(account);
+        login(account, false);
         handleDownload(link, account);
     }
 
-    public void login(final Account account) throws Exception {
-        this.setBrowserExclusive();
-        final Cookies cookies = account.loadCookies("");
-        if (cookies != null) {
-            logger.info("Trying to login via cookies");
-            br.setCookies(account.getHoster(), cookies);
-            getPage(br, "https://www." + account.getHoster() + "/");
-            /* 2020-04-22: Captcha may even happen when cookies are still valid. Untested! ... but better check than don't check ;) */
-            handleUserVerify();
-            if (isLoggedIn(br)) {
-                logger.info("Cookie login successful");
-                account.saveCookies(br.getCookies(br.getHost()), "");
-                return;
-            } else {
-                logger.info("Cookie login failed");
+    /**
+     * Logs in and returns the parsed user information map, or null. </br>
+     * On a fresh full login this returns the "user" object of the login response; on a validated token login it returns the "data"
+     * object of the user-info response. Returns null when no validation was performed (validate == false with a stored token).
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> login(final Account account, final boolean validate) throws Exception {
+        synchronized (account) {
+            final String storedToken = account.getStringProperty(PROPERTY_ACCOUNT_ACCESS_TOKEN);
+            final String user_id_property = PROPERTY_ACCOUNT_USER_ID + "_" + account.getUser();
+            if (storedToken != null) {
+                logger.info("Attempting token login");
+                setLoginHeader(storedToken);
+                if (!validate) {
+                    /* Do not validate token */
+                    return null;
+                }
+                final long storedUserID = account.getLongProperty(user_id_property, -1);
+                br.getPage("https://api." + getHost() + "/v3/users/" + storedUserID);
+                if (br.getHttpConnection().getResponseCode() == 200) {
+                    logger.info("Token login successful");
+                    final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
+                    return (Map<String, Object>) response.get("data");
+                }
+                logger.info("Token login failed");
+                br.getHeaders().remove(HTTPConstants.HEADER_REQUEST_AUTHORIZATION);
             }
+            logger.info("Performing full login");
+            final Map<String, Object> postdata = new HashMap<String, Object>();
+            postdata.put("user", account.getUser());
+            postdata.put("pass", account.getPass());
+            br.getPage(br.createJSonPostRequest("https://api." + getHost() + "/v3/auth/login", postdata));
+            final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
+            final String accessToken = (String) response.get("access_token");
+            if (StringUtils.isEmpty(accessToken)) {
+                throw new AccountInvalidException();
+            }
+            final Map<String, Object> user = (Map<String, Object>) response.get("user");
+            final Number userID = (Number) user.get("id");
+            if (userID == null) {
+                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+            }
+            account.setProperty(PROPERTY_ACCOUNT_ACCESS_TOKEN, accessToken);
+            account.setProperty(user_id_property, userID.longValue());
+            setLoginHeader(accessToken);
+            return user;
         }
-        logger.info("Performing full login");
-        getPage(br, "https://www." + account.getHoster() + "/");
-        handleUserVerify();
-        postPage(br, "/login.php", "remember=y&username=" + Encoding.urlEncode(account.getUser()) + "&password=" + Encoding.urlEncode(account.getPass()));
-        if (!isLoggedIn(br)) {
-            throw new PluginException(LinkStatus.ERROR_PREMIUM, PluginException.VALUE_ID_PREMIUM_DISABLE);
-        }
-        account.saveCookies(br.getCookies(br.getHost()), "");
     }
 
-    private boolean isLoggedIn(final Browser br) {
-        if (br.getCookie(br.getHost(), "u", Cookies.NOTDELETEDPATTERN) != null && br.getCookie(br.getHost(), "p", Cookies.NOTDELETEDPATTERN) != null) {
-            return true;
-        } else {
-            return false;
-        }
+    private void setLoginHeader(final String accessToken) {
+        br.getHeaders().put(HTTPConstants.HEADER_REQUEST_AUTHORIZATION, "Bearer " + accessToken);
     }
 
     @Override
-    public void reset() {
-    }
-
-    @Override
-    public void resetDownloadlink(final DownloadLink link) {
-    }
-
     public boolean hasCaptcha(final DownloadLink link, final jd.plugins.Account acc) {
         return true;
     }

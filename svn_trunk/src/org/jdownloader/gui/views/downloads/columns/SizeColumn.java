@@ -6,13 +6,6 @@ import javax.swing.JComponent;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
 
-import jd.controlling.linkcrawler.CrawledLink;
-import jd.controlling.linkcrawler.CrawledPackage;
-import jd.controlling.packagecontroller.AbstractNode;
-import jd.controlling.packagecontroller.AbstractPackageNode;
-import jd.plugins.DownloadLink;
-import jd.plugins.FilePackage;
-
 import org.appwork.storage.config.JsonConfig;
 import org.appwork.swing.exttable.ExtColumn;
 import org.appwork.swing.exttable.ExtDefaultRowSorter;
@@ -22,18 +15,25 @@ import org.appwork.utils.swing.renderer.RendererMigPanel;
 import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SizeUnitInterface;
+
+import jd.controlling.linkcrawler.CrawledLink;
+import jd.controlling.linkcrawler.CrawledPackage;
+import jd.controlling.packagecontroller.AbstractNode;
+import jd.controlling.packagecontroller.AbstractPackageNode;
+import jd.plugins.DownloadLink;
+import jd.plugins.FilePackage;
 
 public class SizeColumn extends ExtColumn<AbstractNode> {
     /**
      *
      */
-    private final RenderLabel      sizeRenderer;
-    private NumberFormat           formatter;
-    private final RenderLabel      countRenderer;
-    private final RendererMigPanel renderer;
-    private final boolean          fileCountVisible;
-    private final String           zeroString;
-    private final SIZEUNIT         maxSizeUnit;
+    private final RenderLabel       sizeRenderer;
+    private NumberFormat            formatter;
+    private final RenderLabel       countRenderer;
+    private final RendererMigPanel  renderer;
+    private final boolean           fileCountVisible;
+    private final SizeUnitInterface maxSizeUnit;
 
     public JPopupMenu createHeaderPopup() {
         return FileColumn.createColumnPopup(this, getMinWidth() == getMaxWidth() && getMaxWidth() > 0);
@@ -44,10 +44,9 @@ public class SizeColumn extends ExtColumn<AbstractNode> {
         this.sizeRenderer = new RenderLabel();
         this.sizeRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
         this.countRenderer = new RenderLabel();
-        this.zeroString = _GUI.T.SizeColumn_getSizeString_zero();
         this.countRenderer.setHorizontalAlignment(SwingConstants.LEFT);
         fileCountVisible = JsonConfig.create(GraphicalUserInterfaceSettings.class).isFileCountInSizeColumnVisible();
-        maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
+        maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit().toNonNegativeUnit(_GUI.T.SizeColumn_getSizeString_zero());
         this.renderer = new RendererMigPanel("ins 0", "[]0[grow,fill]", "[grow,fill]");
         if (fileCountVisible) {
             renderer.add(countRenderer);
@@ -131,11 +130,7 @@ public class SizeColumn extends ExtColumn<AbstractNode> {
     }
 
     private final String getSizeString(final long fileSize) {
-        if (fileSize < 0) {
-            return zeroString;
-        } else {
-            return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
-        }
+        return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
     }
 
     @Override

@@ -11,11 +11,14 @@ package org.appwork.testframework.tests;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.testframework.executer.ProcessOptions;
@@ -37,6 +40,11 @@ public class TestRunAsLocalSystem extends AWTest implements Serializable {
 
     public static void main(String[] args) {
         run();
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

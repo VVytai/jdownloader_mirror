@@ -850,10 +850,8 @@ public class ClassCache {
                 try {
                     final Method method = c.getDeclaredMethod(g.getMethod().getName(), g.getMethod().getParameterTypes());
                     if (method != null) {
-                        final TT an = method.getAnnotation(class1);
-                        if (an != null) {
-                            ret.add(an);
-                        }
+                        // getDeclaredAnnotationsByType unwraps @Repeatable containers; getAnnotation would miss repeats
+                        Collections.addAll(ret, method.getDeclaredAnnotationsByType(class1));
                     }
                 } catch (NoSuchMethodException e) {
                 } catch (SecurityException e) {
@@ -864,10 +862,7 @@ public class ClassCache {
                 try {
                     final Method method = c.getDeclaredMethod(s.getMethod().getName(), s.getMethod().getParameterTypes());
                     if (method != null) {
-                        final TT an = method.getAnnotation(class1);
-                        if (an != null) {
-                            ret.add(an);
-                        }
+                        Collections.addAll(ret, method.getDeclaredAnnotationsByType(class1));
                     }
                 } catch (NoSuchMethodException e) {
                 } catch (SecurityException e) {
@@ -878,10 +873,7 @@ public class ClassCache {
                 try {
                     final Field field = c.getDeclaredField(key);
                     if (field != null) {
-                        final TT an = field.getAnnotation(class1);
-                        if (an != null) {
-                            ret.add(an);
-                        }
+                        Collections.addAll(ret, field.getDeclaredAnnotationsByType(class1));
                     }
                 } catch (NoSuchFieldException e) {
                 } catch (SecurityException e) {
@@ -889,10 +881,7 @@ public class ClassCache {
                 }
             }
             if (key == null) {
-                final TT an = ReflectionUtils.getAnnotation(t, class1);
-                if (an != null) {
-                    ret.add(an);
-                }
+                Collections.addAll(ret, c.getDeclaredAnnotationsByType(class1));
             }
         }
         synchronized (annotationsCache) {

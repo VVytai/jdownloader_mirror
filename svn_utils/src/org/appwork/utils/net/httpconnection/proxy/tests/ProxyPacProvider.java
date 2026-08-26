@@ -18,8 +18,6 @@ package org.appwork.utils.net.httpconnection.proxy.tests;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
-
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.net.protocol.http.HTTPConstants;
 import org.appwork.net.protocol.http.HTTPConstants.ResponseCode;
@@ -167,7 +165,6 @@ public class ProxyPacProvider {
     }
 
     public static void main(final String[] args) {
-        BuildDecisions.setEnabled(false);
         Application.setApplication(".proxy");
         final ProxyPacProvider provider = new ProxyPacProvider();
         try {

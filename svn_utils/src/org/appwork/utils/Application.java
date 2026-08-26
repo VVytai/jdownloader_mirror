@@ -77,7 +77,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.exceptions.WTFException;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.utils.logging2.LogInterface;
@@ -1070,29 +1069,6 @@ public class Application {
             return;
         } else {
             DID_INIT = true;
-            BuildDecisions.status(LogV3.defaultLogger());
-            // do not run in Tests
-            if (BuildDecisions.isEnabled() && !isJared(null)) {
-                if (System.getProperty("BUILD_DECISIONS_DIRECT") != null || BuildDecisions.isEmpty()) {
-                    BuildDecisions.validate();
-                } else {
-                    new Thread("BuildDecisions Check") {
-                        {
-                            setDaemon(true);
-                        }
-
-                        public void run() {
-                            try {
-                                Thread.sleep(10000);
-                            } catch (InterruptedException e) {
-                                // cannot happen
-                                LogV3.log(e);
-                            }
-                            BuildDecisions.validate();
-                        };
-                    }.start();
-                }
-            }
             org.appwork.shutdown.ShutdownController.getInstance();
         }
     }

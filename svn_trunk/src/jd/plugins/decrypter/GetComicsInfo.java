@@ -22,7 +22,6 @@ import java.util.List;
 import org.appwork.utils.Regex;
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.encoding.Base64;
-import org.jdownloader.plugins.components.antiDDoSForDecrypt;
 
 import jd.PluginWrapper;
 import jd.config.ConfigContainer;
@@ -31,19 +30,23 @@ import jd.controlling.ProgressController;
 import jd.http.Browser;
 import jd.http.Request;
 import jd.http.URLConnectionAdapter;
-import jd.http.requests.GetRequest;
 import jd.nutils.encoding.Encoding;
 import jd.parser.html.HTMLParser;
 import jd.plugins.CryptedLink;
 import jd.plugins.DecrypterPlugin;
+import jd.plugins.DecrypterRetryException;
+import jd.plugins.DecrypterRetryException.RetryReason;
 import jd.plugins.DownloadLink;
 import jd.plugins.FilePackage;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
+import jd.plugins.PluginForDecrypt;
 
-@DecrypterPlugin(revision = "$Revision: 53120 $", interfaceVersion = 3, names = {}, urls = {})
-public class GetComicsInfo extends antiDDoSForDecrypt {
+@DecrypterPlugin(revision = "$Revision: 53221 $", interfaceVersion = 3, names = {}, urls = {})
+public class GetComicsInfo extends PluginForDecrypt {
     private final String PROPERTY_DOWNLOAD_SINGLE_PAGES = "DOWNLOAD_SINGLE_PAGES";
+    /** Maximum number of retries performed for a request answering with http 429 Too Many Requests. */
+    private static final int MAX_429_RETRIES              = 10;
 
     public GetComicsInfo(PluginWrapper wrapper) {
         super(wrapper);
@@ -86,134 +89,203 @@ public class GetComicsInfo extends antiDDoSForDecrypt {
 
     @Override
     public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
-        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
         final String contenturl = param.getCryptedUrl().replaceFirst("^(?i)http://", "https://");
         if (contenturl.matches("https?://[^/]+/share/uploads/\\d+/\\d+/[a-zA-Z0-9\\_\\-]+\\.txt")) {
-            // Load page
-            br.setFollowRedirects(true);
-            final Request request = br.createGetRequest(contenturl);
-            request.getHeaders().put("X-Requested-With", "XMLHttpRequest");
-            final String page = br.getPage(request).toString();
-            final String[][] regExMatches = new Regex(page, "(https?://.*?)(\\s|$)").getMatches();
-            for (final String[] regExMatch : regExMatches) {
-                final String matchedURL = Encoding.htmlDecode(regExMatch[0]);
-                ret.add(createDownloadlink(matchedURL));
-            }
-        } else {
-            // Load page
-            br.setFollowRedirects(false);
-            final GetRequest request = br.createGetRequest(contenturl);
-            URLConnectionAdapter con = openAntiDDoSRequestConnection(br, request);
-            try {
-                int attempts = 0;
-                do {
-                    attempts++;
-                    if (this.looksLikeDownloadableContent(con)) {
-                        final DownloadLink direct = getCrawler().createDirectHTTPDownloadLink(request, con);
-                        ret.add(direct.getDownloadLink());
-                        // return decryptedLinks;
-                        break;
-                    } else {
-                        final String redirect = con.getRequest().getLocation();
-                        if (redirect != null) {
-                            if (!canHandle(redirect)) {
-                                ret.add(createDownloadlink(redirect));
-                                return ret;
-                            }
-                            br.followRedirect(false);
-                            con = br.getRequest().getHttpConnection();
-                        } else {
-                            br.followConnection();
-                            break;
-                        }
-                    }
-                } while (attempts <= 10);
-            } finally {
-                con.disconnect();
-            }
-            br.setFollowRedirects(true);
-            if (br.containsHTML("You have been redirected through this website from a suspicious source")) {
-                String base64 = new Regex(contenturl, "((aHR0c|ZnRwOi).+)($|\\?)").getMatch(0);
-                if (base64 != null) {
-                    /* base64 http and ftp */
-                    while (true) {
-                        if (base64.length() % 4 != 0) {
-                            base64 += "=";
-                        } else {
-                            break;
-                        }
-                    }
-                    final byte[] decoded = Base64.decode(base64);
-                    if (decoded != null) {
-                        final String possibleURLs = new String(decoded, "UTF-8");
-                        ret.add(createDownloadlink(possibleURLs, false));
-                        return ret;
-                    }
-                }
-                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-            }
-            String title = br.getRegex("<title>([^<]+)").getMatch(0);
-            if (title != null) {
-                title = Encoding.htmlDecode(title).trim();
-                title = title.replaceFirst("\\s*GetComics$", "");
-            }
-            final ArrayList<String> links = new ArrayList<String>();
-            final String textBody = br.getRegex("<section class=\"post-contents\">(.*)<strong>(?:Screenshots|Notes)").getMatch(0);
-            if (StringUtils.isNotEmpty(textBody)) {
-                Collections.addAll(links, HTMLParser.getHttpLinks(textBody, null));
-            } else {
-                Collections.addAll(links, br.getRegex("<h1[^>]+class\\s*=\\s*\"post-title\"[^>]*>\\s*<a[^>]+href\\s*=\\s*\"([^\"]+)\"[^>]*>").getColumn(0));
-                Collections.addAll(links, br.getRegex("<a[^>]+class\\s*=\\s*\"page-numbers[^\"]*\"[^>]+href\\s*=\\s*\"([^\"]+)\"").getColumn(0));
-                Collections.addAll(links, br.getRegex("href\\s*=\\s*\"([^\"]+)\"[^>]+class\\s*=\\s*\"pagination-button").getColumn(0));
-            }
-            if (!links.isEmpty()) {
-                for (final String link : links) {
-                    String detectedLink = null;
-                    if (StringUtils.containsIgnoreCase(link, "run.php-urls")) {
-                        // checks for correct referer!
-                        final Browser brc = br.cloneBrowser();
-                        brc.setFollowRedirects(false);
-                        getPage(brc, link);
-                        String redirect = brc.getRedirectLocation();
-                        if (redirect == null) {
-                            sleep(1000, param);
-                            getPage(brc, contenturl);
-                            getPage(brc, link);
-                            redirect = brc.getRedirectLocation();
-                        }
-                        if (redirect != null) {
-                            detectedLink = redirect;
-                        }
-                    } else {
-                        detectedLink = Encoding.htmlOnlyDecode(link);
-                    }
-                    if (new Regex(detectedLink, ".*(imgur\\.com|windsplay\\.com|/contact|/sitemap|/how-to-download).*").patternFind()) {
-                        continue;
-                    } else if (new Regex(detectedLink, ".*\\.js$").patternFind()) {
-                        /* Skip js urls */
-                        continue;
-                    }
-                    if (!getPluginConfig().getBooleanProperty(PROPERTY_DOWNLOAD_SINGLE_PAGES, true)) {
-                        if (StringUtils.containsIgnoreCase(detectedLink, "readcomicsonline.ru")) {
-                            detectedLink = null;
-                        }
-                    }
-                    if (StringUtils.isEmpty(detectedLink)) {
-                        continue;
-                    }
-                    ret.add(createDownloadlink(detectedLink, false));
-                }
-            }
-            final FilePackage fp = FilePackage.getInstance();
-            if (!StringUtils.isEmpty(title)) {
-                fp.setName(title);
-            } else {
-                /* Fallback */
-                fp.setName(br._getURL().getPath());
-            }
-            fp.addLinks(ret);
+            return this.crawlTextFile(contenturl);
+        }
+        return this.crawlWebsite(param, contenturl);
+    }
+
+    /** Crawls a plaintext .txt file that contains one http(s) URL per line. */
+    private ArrayList<DownloadLink> crawlTextFile(final String contenturl) throws Exception {
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        br.setFollowRedirects(true);
+        final Request request = br.createGetRequest(contenturl);
+        request.getHeaders().put("X-Requested-With", "XMLHttpRequest");
+        final String page = this.getPage(br, request);
+        final String[][] regExMatches = new Regex(page, "(https?://.*?)(\\s|$)").getMatches();
+        for (final String[] regExMatch : regExMatches) {
+            final String matchedURL = Encoding.htmlDecode(regExMatch[0]);
+            ret.add(createDownloadlink(matchedURL));
         }
         return ret;
+    }
+
+    /** Crawls a regular getcomics website post. */
+    private ArrayList<DownloadLink> crawlWebsite(final CryptedLink param, final String contenturl) throws Exception {
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        // Load page
+        br.setFollowRedirects(false);
+        URLConnectionAdapter con = this.openConnection(br, br.createGetRequest(contenturl));
+        try {
+            int attempts = 0;
+            do {
+                attempts++;
+                if (this.looksLikeDownloadableContent(con)) {
+                    final DownloadLink direct = getCrawler().createDirectHTTPDownloadLink(con.getRequest(), con);
+                    ret.add(direct.getDownloadLink());
+                    break;
+                }
+                final String redirect = con.getRequest().getLocation();
+                if (redirect == null) {
+                    br.followConnection();
+                    break;
+                }
+                if (!canHandle(redirect)) {
+                    ret.add(createDownloadlink(redirect));
+                    return ret;
+                }
+                con = this.openConnection(br, br.createGetRequest(redirect));
+            } while (attempts <= 10);
+        } finally {
+            con.disconnect();
+        }
+        br.setFollowRedirects(true);
+        if (br.containsHTML("You have been redirected through this website from a suspicious source")) {
+            return this.crawlSuspiciousSource(contenturl);
+        }
+        String title = br.getRegex("<title>([^<]+)").getMatch(0);
+        if (title != null) {
+            title = Encoding.htmlDecode(title).trim();
+            title = title.replaceFirst("\\s*GetComics$", "");
+        }
+        final ArrayList<String> links = new ArrayList<String>();
+        final String textBody = br.getRegex("<section class=\"post-contents\">(.*)<strong>(?:Screenshots|Notes)").getMatch(0);
+        if (StringUtils.isNotEmpty(textBody)) {
+            Collections.addAll(links, HTMLParser.getHttpLinks(textBody, null));
+        } else {
+            Collections.addAll(links, br.getRegex("<h1[^>]+class\\s*=\\s*\"post-title\"[^>]*>\\s*<a[^>]+href\\s*=\\s*\"([^\"]+)\"[^>]*>").getColumn(0));
+            Collections.addAll(links, br.getRegex("<a[^>]+class\\s*=\\s*\"page-numbers[^\"]*\"[^>]+href\\s*=\\s*\"([^\"]+)\"").getColumn(0));
+            Collections.addAll(links, br.getRegex("href\\s*=\\s*\"([^\"]+)\"[^>]+class\\s*=\\s*\"pagination-button").getColumn(0));
+        }
+        for (final String link : links) {
+            String detectedLink;
+            if (StringUtils.containsIgnoreCase(link, "run.php-urls")) {
+                // checks for correct referer!
+                final Browser brc = br.cloneBrowser();
+                brc.setFollowRedirects(false);
+                getPage(brc, link);
+                String redirect = brc.getRedirectLocation();
+                if (redirect == null) {
+                    sleep(1000, param);
+                    getPage(brc, contenturl);
+                    getPage(brc, link);
+                    redirect = brc.getRedirectLocation();
+                }
+                detectedLink = redirect;
+            } else {
+                detectedLink = Encoding.htmlOnlyDecode(link);
+            }
+            if (StringUtils.isEmpty(detectedLink)) {
+                continue;
+            }
+            if (new Regex(detectedLink, ".*(imgur\\.com|windsplay\\.com|/contact|/sitemap|/how-to-download).*").patternFind()) {
+                continue;
+            }
+            if (new Regex(detectedLink, ".*\\.js$").patternFind()) {
+                /* Skip js urls */
+                continue;
+            }
+            if (!getPluginConfig().getBooleanProperty(PROPERTY_DOWNLOAD_SINGLE_PAGES, true) && StringUtils.containsIgnoreCase(detectedLink, "readcomicsonline.ru")) {
+                continue;
+            }
+            ret.add(createDownloadlink(detectedLink, false));
+        }
+        final FilePackage fp = FilePackage.getInstance();
+        if (!StringUtils.isEmpty(title)) {
+            fp.setName(title);
+        } else {
+            /* Fallback */
+            fp.setName(br._getURL().getPath());
+        }
+        fp.addLinks(ret);
+        return ret;
+    }
+
+    /** Handles the "redirected from a suspicious source" interstitial by decoding the base64 target URL. */
+    private ArrayList<DownloadLink> crawlSuspiciousSource(final String contenturl) throws Exception {
+        String base64 = new Regex(contenturl, "((aHR0c|ZnRwOi).+)($|\\?)").getMatch(0);
+        if (base64 == null) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+        }
+        /* base64 http and ftp */
+        while (base64.length() % 4 != 0) {
+            base64 += "=";
+        }
+        final byte[] decoded = Base64.decode(base64);
+        if (decoded == null) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+        }
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        final String possibleURLs = new String(decoded, "UTF-8");
+        ret.add(createDownloadlink(possibleURLs, false));
+        return ret;
+    }
+
+    /**
+     * Loads the given url into the given Browser and retries up to {@link #MAX_429_RETRIES} times as long as the server answers with http
+     * 429 Too Many Requests.
+     */
+    private void getPage(final Browser ibr, final String url) throws Exception {
+        int counter = 0;
+        while (true) {
+            ibr.getPage(url);
+            if (ibr.getHttpConnection() == null || ibr.getHttpConnection().getResponseCode() != 429) {
+                return;
+            }
+            if (counter >= MAX_429_RETRIES) {
+                throw new DecrypterRetryException(RetryReason.HOST_RATE_LIMIT);
+            }
+            counter++;
+            logger.info("Response 429 Too Many Requests | Retry " + counter + "/" + MAX_429_RETRIES);
+            this.sleepFor429(counter);
+        }
+    }
+
+    /**
+     * Loads the given prepared request into the given Browser and retries up to {@link #MAX_429_RETRIES} times as long as the server answers
+     * with http 429 Too Many Requests. Returns the loaded html.
+     */
+    private String getPage(final Browser ibr, final Request request) throws Exception {
+        int counter = 0;
+        while (true) {
+            ibr.getPage(request.cloneRequest());
+            if (ibr.getHttpConnection() == null || ibr.getHttpConnection().getResponseCode() != 429) {
+                return ibr.toString();
+            }
+            if (counter >= MAX_429_RETRIES) {
+                throw new DecrypterRetryException(RetryReason.HOST_RATE_LIMIT);
+            }
+            counter++;
+            logger.info("Response 429 Too Many Requests | Retry " + counter + "/" + MAX_429_RETRIES);
+            this.sleepFor429(counter);
+        }
+    }
+
+    /**
+     * Opens a connection for the given request via the given Browser and retries up to {@link #MAX_429_RETRIES} times as long as the server
+     * answers with http 429 Too Many Requests.
+     */
+    private URLConnectionAdapter openConnection(final Browser ibr, final Request request) throws Exception {
+        int counter = 0;
+        while (true) {
+            final URLConnectionAdapter con = ibr.openRequestConnection(request.cloneRequest());
+            if (con.getResponseCode() != 429) {
+                return con;
+            }
+            con.disconnect();
+            if (counter >= MAX_429_RETRIES) {
+                throw new DecrypterRetryException(RetryReason.HOST_RATE_LIMIT);
+            }
+            counter++;
+            logger.info("Response 429 Too Many Requests | Retry " + counter + "/" + MAX_429_RETRIES);
+            this.sleepFor429(counter);
+        }
+    }
+
+    /** Waits a moment before retrying a request that answered with http 429 Too Many Requests. */
+    private void sleepFor429(final int counter) throws InterruptedException {
+        Thread.sleep(1000l * Math.min(counter, 5));
     }
 
     private void setConfigElements() {

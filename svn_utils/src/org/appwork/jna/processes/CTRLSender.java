@@ -2,8 +2,6 @@
  *
  */
 package org.appwork.jna.processes;
-
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.jna.windows.Kernel32Ext;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.loggingv3.simple.SimpleLoggerFactory;
@@ -28,7 +26,6 @@ public class CTRLSender {
     public static final int PROCESS_NOT_FOUND = 1;
 
     public static void main(final String[] args) {
-        BuildDecisions.setEnabled(false);
         final int pid = Integer.parseInt(args[0]);
         try {
             Application.setApplication(".AppWorkUtils");

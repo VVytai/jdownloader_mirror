@@ -44,8 +44,6 @@ import org.appwork.storage.Storable;
 import org.appwork.storage.StorableDoc;
 import org.appwork.storage.StorableExample;
 import org.appwork.storage.StorableValidateCondition;
-import org.appwork.storage.StorableValidateCondition2;
-import org.appwork.storage.StorableValidateCondition3;
 import org.appwork.storage.StorableValidationLogic;
 import org.appwork.storage.TypeRef;
 import org.appwork.utils.StringUtils;
@@ -57,9 +55,9 @@ import org.appwork.utils.StringUtils;
  */
 @StorableDoc("Localised text map. {\"en\":\"...\"} is the default and fallback language, and must always be set!")
 @StorableValidateCondition(value = "{en:{§exists:true,§ne:null}}", description = "At least an english translation is required")
-@StorableValidateCondition2(value = "{§keys:{§each:{§or:[{§regex:\"\\\\p{Lower}{2}\"},{§regex:\"\\\\p{Lower}{2}_\\\\p{Upper}{2}\"},{§regex:\"\\\\p{Lower}{2}_\\\\p{Upper}{2}_\\\\S+\"}]}}}", description = "All keys must match the format \r\n<2 char language code lower case>_<2 char country code upper case>_<Variant id>, \r\nwhile country code and variant id are optional.")
+@StorableValidateCondition(value = "{§keys:{§each:{§or:[{§regex:\"\\\\p{Lower}{2}\"},{§regex:\"\\\\p{Lower}{2}_\\\\p{Upper}{2}\"},{§regex:\"\\\\p{Lower}{2}_\\\\p{Upper}{2}_\\\\S+\"}]}}}", description = "All keys must match the format \r\n<2 char language code lower case>_<2 char country code upper case>_<Variant id>, \r\nwhile country code and variant id are optional.")
 // §node -> run on flexinode instead of actual types. §node->§type -> Flexi TYpe not java type
-@StorableValidateCondition3(value = "{§node.§type:STRING}", description = "You should use the format {\"en\":\"...\"} instead", level = FailLevel.WARNING, logic = StorableValidationLogic.FAIL_ON_MATCH)
+@StorableValidateCondition(value = "{§node.§type:STRING}", description = "You should use the format {\"en\":\"...\"} instead", level = FailLevel.WARNING, logic = StorableValidationLogic.FAIL_ON_MATCH)
 @StorableExample("{\"en\":\"My english Text\",\"de\":\"Mein deutscher Text\"}")
 public class LocaleMap extends LinkedHashMap<String, String> implements Storable {
     /**

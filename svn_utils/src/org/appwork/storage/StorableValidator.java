@@ -83,9 +83,7 @@ import org.appwork.storage.simplejson.mapper.ClassCache;
 import org.appwork.storage.simplejson.mapper.Property;
 import org.appwork.storage.simplejson.mapper.Setter;
 import org.appwork.storage.validator.classvalidator.StorableAbstractValidator;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator1;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator2;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator3;
+import org.appwork.storage.validator.classvalidator.StorableClassValidator;
 import org.appwork.utils.CompareUtils;
 import org.appwork.utils.DebugMode;
 import org.appwork.utils.Exceptions;
@@ -934,8 +932,6 @@ public class StorableValidator<T> {
         // add(cc.getAnnotations(key, StorableValidateNotNull.class));
         // add(cc.getAnnotations(key, StorableValidateMandatoryInJson.class));
         // add(cc.getAnnotations(key, StorableValidateCondition.class));
-        // add(cc.getAnnotations(key, StorableValidateCondition2.class));
-        // add(cc.getAnnotations(key, StorableValidateCondition3.class));
         // add(cc.getAnnotations(key, StorableValidateRegex.class));
         // add(cc.getAnnotations(key, StorableDeprecatedSince.class));
         // add(cc.getAnnotations(key, StorableAvailableSince.class));
@@ -978,14 +974,10 @@ public class StorableValidator<T> {
             if (cc != null) {
                 if (value != null) {
                     // this adds annotations for the type - no reason to evaluate them if the value is null.
-                    add(cc.getAnnotations(null, StorableClassValidator1.class));
-                    add(cc.getAnnotations(null, StorableClassValidator2.class));
-                    add(cc.getAnnotations(null, StorableClassValidator3.class));
+                    add(cc.getAnnotations(null, StorableClassValidator.class));
                     add(cc.getAnnotations(null, StorableValidateNotNull.class));
                     add(cc.getAnnotations(null, StorableValidateMandatoryInJson.class));
                     add(cc.getAnnotations(null, StorableValidateCondition.class));
-                    add(cc.getAnnotations(null, StorableValidateCondition2.class));
-                    add(cc.getAnnotations(null, StorableValidateCondition3.class));
                     add(cc.getAnnotations(null, StorableValidateRegex.class));
                     add(cc.getAnnotations(null, StorableDeprecatedSince.class));
                     add(cc.getAnnotations(null, StorableAvailableSince.class));
@@ -997,14 +989,10 @@ public class StorableValidator<T> {
                 if (context != null) {
                     cc = context.getter.classCache;
                     add(cc.getAnnotations(context.key, FlexiEnumFallback.class));
-                    add(cc.getAnnotations(context.key, StorableClassValidator1.class));
-                    add(cc.getAnnotations(context.key, StorableClassValidator2.class));
-                    add(cc.getAnnotations(context.key, StorableClassValidator3.class));
+                    add(cc.getAnnotations(context.key, StorableClassValidator.class));
                     add(cc.getAnnotations(context.key, StorableValidateNotNull.class));
                     add(cc.getAnnotations(context.key, StorableValidateMandatoryInJson.class));
                     add(cc.getAnnotations(context.key, StorableValidateCondition.class));
-                    add(cc.getAnnotations(context.key, StorableValidateCondition2.class));
-                    add(cc.getAnnotations(context.key, StorableValidateCondition3.class));
                     add(cc.getAnnotations(context.key, StorableValidateRegex.class));
                     add(cc.getAnnotations(context.key, StorableDeprecatedSince.class));
                     add(cc.getAnnotations(context.key, StorableUnique.class));
@@ -1471,28 +1459,14 @@ public class StorableValidator<T> {
                 if (c instanceof StorableValidateMandatoryInJson) {
                     validateMandatory(toDo, (StorableValidateMandatoryInJson) c);
                 }
-                if (c instanceof StorableClassValidator1) {
-                    validateClassValidator(toDo, ((StorableClassValidator1) c).cls(), ((StorableClassValidator1) c).parameter(), ((StorableClassValidator1) c).level(), ((StorableClassValidator1) c).message());
-                }
-                if (c instanceof StorableClassValidator2) {
-                    validateClassValidator(toDo, ((StorableClassValidator2) c).cls(), ((StorableClassValidator2) c).parameter(), ((StorableClassValidator2) c).level(), ((StorableClassValidator2) c).message());
-                }
-                if (c instanceof StorableClassValidator3) {
-                    validateClassValidator(toDo, ((StorableClassValidator3) c).cls(), ((StorableClassValidator3) c).parameter(), ((StorableClassValidator3) c).level(), ((StorableClassValidator3) c).message());
+                if (c instanceof StorableClassValidator) {
+                    validateClassValidator(toDo, ((StorableClassValidator) c).cls(), ((StorableClassValidator) c).parameter(), ((StorableClassValidator) c).level(), ((StorableClassValidator) c).message());
                 }
                 if (c instanceof StorableValidateNotNull) {
                     validateNotNull(toDo, (StorableValidateNotNull) c);
                 }
                 if (c instanceof StorableValidateCondition) {
                     StorableValidateCondition condition = (StorableValidateCondition) c;
-                    validateCondition(toDo, condition.value(), condition.level(), condition.logic(), condition.description());
-                }
-                if (c instanceof StorableValidateCondition2) {
-                    StorableValidateCondition2 condition = (StorableValidateCondition2) c;
-                    validateCondition(toDo, condition.value(), condition.level(), condition.logic(), condition.description());
-                }
-                if (c instanceof StorableValidateCondition3) {
-                    StorableValidateCondition3 condition = (StorableValidateCondition3) c;
                     validateCondition(toDo, condition.value(), condition.level(), condition.logic(), condition.description());
                 }
             } catch (final Exception e) {

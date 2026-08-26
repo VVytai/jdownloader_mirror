@@ -27,6 +27,7 @@ import org.appwork.utils.StringUtils;
 import org.jdownloader.plugins.controller.LazyPlugin;
 
 import jd.PluginWrapper;
+import jd.controlling.AccountController;
 import jd.http.Browser;
 import jd.http.Cookies;
 import jd.http.requests.PostRequest;
@@ -46,7 +47,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53176 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 3, names = {}, urls = {})
 public class HypnotubeCom extends PluginForHost {
     public HypnotubeCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -142,7 +143,7 @@ public class HypnotubeCom extends PluginForHost {
 
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws Exception {
-        return requestFileInformation(link, null, false);
+        return requestFileInformation(link, AccountController.getInstance().getValidAccount(getHost()), false);
     }
 
     private void handleAgeGate(Browser br) throws Exception {
@@ -174,6 +175,9 @@ public class HypnotubeCom extends PluginForHost {
             }
         }
         this.setBrowserExclusive();
+        if (account != null) {
+            login(account, null, false);
+        }
         if (new Regex(link.getPluginPatternMatcher(), PATTERN_EMBED).patternFind()) {
             /* Access normal video URL so we can find the video title */
             br.getPage("https://" + this.getHost() + "/video/-" + videoid + ".html");
@@ -191,7 +195,17 @@ public class HypnotubeCom extends PluginForHost {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         String title = HTMLSearch.searchMetaTag(br, "og:title");
-        dllink = br.getRegex("<source src=\"(https?://[^\"]+)\" type=.video/mp4.").getMatch(0);
+        final String sources[] = br.getRegex("(<source src=\"https?://[^\"]+\"[^>]*type=.video/mp4.[^>]*>)").getColumn(0);
+        best_resolution: if (sources != null) {
+            int best_resolution = -1;
+            for (String source : sources) {
+                final String resolutionString = new Regex(source, "sizes\\s*=\\s*'(\\d+)").getMatch(0);
+                if (dllink == null || Integer.parseInt(resolutionString) > best_resolution) {
+                    dllink = new Regex(source, "src=\"(https?://[^\"]+)").getMatch(0);
+                    best_resolution = Integer.parseInt(resolutionString);
+                }
+            }
+        }
         if (title != null) {
             title = Encoding.htmlDecode(title);
             title = title.trim();

@@ -97,6 +97,7 @@ public class HttpServerCorsBasicTest extends HttpServerTestBase {
             // CORS with allowedOrigins=null: reject all Origin requests (even localhost)
             this.testCorsRejectsAllOrigins();
             this.testCorsForbidAllAllowsNoOrigin();
+            this.testCorsAllowSameOriginWithNullAllowedOrigins();
             // Pattern-based rules tests
             this.testCredentialsPatternRules();
             this.testCredentialsPatternRulesPriority();
@@ -508,6 +509,31 @@ public class HttpServerCorsBasicTest extends HttpServerTestBase {
         this.assertTrueWithContext(this.lastServerException == null, "No server-side exception expected for request without Origin, but got: " + this.lastServerException, context);
         this.assertNoCorsHeaders(context, "allowedOrigins=null no Origin");
         LogV3.info("Test 15 passed: No-Origin request allowed with allowedOrigins=null");
+    }
+
+    /**
+     * allowSameOrigin=true with allowedOrigins=null: same-origin Origin allowed, foreign Origin still rejected
+     */
+    private void testCorsAllowSameOriginWithNullAllowedOrigins() throws Exception {
+        LogV3.info("Test: allowSameOrigin with allowedOrigins=null");
+        final CorsHandler corsHandler = new CorsHandler();
+        corsHandler.setAllowedOrigins(null);
+        corsHandler.setAllowSameOrigin(true);
+        corsHandler.setAllowMethods(EnumSet.of(RequestMethod.OPTIONS, RequestMethod.GET, RequestMethod.POST));
+        corsHandler.setMaxAge(TimeUnit.SECONDS.toMillis(30));
+        corsHandler.setAllowHeadersFromRequest(true);
+        this.httpServer.setCorsHandler(corsHandler);
+        final String url = "http://localhost:" + this.serverPort + "/test/echo?message=test";
+        final String sameOrigin = "http://localhost:" + this.serverPort;
+        this.lastServerException = null;
+        final RequestContext sameOriginContext = this.httpClient.execute(new RequestContext(RequestMethod.GET, url).addHeader("Origin", sameOrigin));
+        this.assertTrueWithContext(sameOriginContext.getCode() == 200, "Same-origin Origin should be allowed, was: " + sameOriginContext.getCode(), sameOriginContext);
+        this.assertTrueWithContext(this.lastServerException == null, "No server-side exception expected for same-origin Origin, but got: " + this.lastServerException, sameOriginContext);
+        this.lastServerException = null;
+        final RequestContext foreignContext = this.httpClient.execute(new RequestContext(RequestMethod.GET, url).addHeader("Origin", "https://boeseseite.com"));
+        this.assertTrueWithContext(foreignContext.getCode() == ResponseCode.ERROR_FORBIDDEN.getCode(), "Foreign Origin should still be rejected, was: " + foreignContext.getCode(), foreignContext);
+        this.assertTrueWithContext(this.lastServerException instanceof ForbiddenOriginException, "Server-side exception should be ForbiddenOriginException, but was: " + this.lastServerException, foreignContext);
+        LogV3.info("Test passed: allowSameOrigin allows same host Origin only");
     }
 
     /**

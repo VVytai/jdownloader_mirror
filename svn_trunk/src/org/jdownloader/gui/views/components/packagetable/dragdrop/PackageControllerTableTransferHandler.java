@@ -366,20 +366,20 @@ public abstract class PackageControllerTableTransferHandler<PackageType extends 
                 table.getController().getQueue().add(new QueueAction<Void, RuntimeException>(prio) {
                     @Override
                     protected Void run() throws RuntimeException {
-                        final PackageSettings mergesettings = new PackageSettings();
+                        final PackageSettings settings = new PackageSettings();
                         /* Drag&drop onto a package only moves the dropped items into it; it must not trigger same-name merging. */
-                        mergesettings.setMergeSameNamedPackages(false);
+                        settings.setMergeSameNamedPackages(false);
                         if (((PackageType) element).getCurrentSorter() == null) {
                             if (org.jdownloader.settings.staticreferences.CFG_LINKCOLLECTOR.DO_MERGE_TOP_BOTTOM.isEnabled()) {
-                                mergesettings.setPackagePosition(MergePosition.BOTTOM);
+                                settings.setPackagePosition(MergePosition.BOTTOM);
                             } else {
-                                mergesettings.setPackagePosition(MergePosition.TOP);
+                                settings.setPackagePosition(MergePosition.TOP);
                             }
                         } else {
                             // we have a sorter.neither top nor bottom but sorted insert
-                            mergesettings.setPackagePosition(MergePosition.SORTED);
+                            settings.setPackagePosition(MergePosition.SORTED);
                         }
-                        table.getController().merge((PackageType) element, links, packages, mergesettings);
+                        table.getController().moveIntoPackage(links, packages, (PackageType) element, settings);
                         return null;
                     }
                 });

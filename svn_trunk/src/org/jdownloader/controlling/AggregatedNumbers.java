@@ -6,12 +6,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import jd.controlling.downloadcontroller.ManagedThrottledConnectionHandler;
-import jd.controlling.downloadcontroller.SingleDownloadController;
-import jd.plugins.DownloadLink;
-import jd.plugins.FilePackage;
-import jd.plugins.download.DownloadInterface;
-
 import org.appwork.storage.config.JsonConfig;
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.formatter.TimeFormatter;
@@ -27,13 +21,20 @@ import org.jdownloader.settings.GeneralSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SPEEDUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SizeUnitInterface;
+
+import jd.controlling.downloadcontroller.ManagedThrottledConnectionHandler;
+import jd.controlling.downloadcontroller.SingleDownloadController;
+import jd.plugins.DownloadLink;
+import jd.plugins.FilePackage;
+import jd.plugins.download.DownloadInterface;
 
 public class AggregatedNumbers {
-    protected static final boolean FORCED_MIRROR_CASE_INSENSITIVE = CrossSystem.isWindows() || JsonConfig.create(GeneralSettings.class).isForceMirrorDetectionCaseInsensitive();
-    private final long             totalBytes;
-    private static final SIZEUNIT  maxSizeUnit                    = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
-    private static final SPEEDUNIT maxSpeedUnit                   = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSpeedUnit();
-    private final NumberFormat     formatter;
+    protected static final boolean         FORCED_MIRROR_CASE_INSENSITIVE = CrossSystem.isWindows() || JsonConfig.create(GeneralSettings.class).isForceMirrorDetectionCaseInsensitive();
+    private final long                     totalBytes;
+    private static final SizeUnitInterface maxSizeUnit                    = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit().toNonNegativeUnit(_GUI.T.lit_unknown());
+    private static final SPEEDUNIT         maxSpeedUnit                   = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSpeedUnit();
+    private final NumberFormat             formatter;
 
     public final String getFinishedString(final boolean inclDisabled) {
         if (inclDisabled) {
@@ -68,11 +69,7 @@ public class AggregatedNumbers {
     }
 
     private String format(final long fileSize) {
-        if (fileSize < 0) {
-            return _GUI.T.lit_unknown();
-        } else {
-            return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
-        }
+        return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
     }
 
     public String getLoadedBytesString(boolean inclDisabled) {

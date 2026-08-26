@@ -17,19 +17,6 @@ import javax.swing.JComponent;
 import javax.swing.JTable;
 import javax.swing.table.JTableHeader;
 
-import jd.SecondLevelLaunch;
-import jd.controlling.AccountController;
-import jd.controlling.AccountControllerEvent;
-import jd.controlling.AccountControllerListener;
-import jd.controlling.accountchecker.AccountChecker;
-import jd.controlling.accountchecker.AccountCheckerEventListener;
-import jd.gui.swing.jdgui.interfaces.SwitchPanelEvent;
-import jd.gui.swing.jdgui.interfaces.SwitchPanelListener;
-import jd.plugins.Account;
-import jd.plugins.AccountInfo;
-import jd.plugins.AccountTrafficView;
-import jd.plugins.PluginForHost;
-
 import org.appwork.scheduler.DelayedRunnable;
 import org.appwork.storage.config.JsonConfig;
 import org.appwork.swing.components.ExtMergedIcon;
@@ -58,6 +45,19 @@ import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
 import org.jdownloader.settings.staticreferences.CFG_GUI;
 
+import jd.SecondLevelLaunch;
+import jd.controlling.AccountController;
+import jd.controlling.AccountControllerEvent;
+import jd.controlling.AccountControllerListener;
+import jd.controlling.accountchecker.AccountChecker;
+import jd.controlling.accountchecker.AccountCheckerEventListener;
+import jd.gui.swing.jdgui.interfaces.SwitchPanelEvent;
+import jd.gui.swing.jdgui.interfaces.SwitchPanelListener;
+import jd.plugins.Account;
+import jd.plugins.AccountInfo;
+import jd.plugins.AccountTrafficView;
+import jd.plugins.PluginForHost;
+
 public class PremiumAccountTableModel extends ExtTableModel<AccountEntry> implements AccountCheckerEventListener {
     protected class TrafficColumn extends ExtProgressColumn<AccountEntry> {
         private static final long   serialVersionUID = -8376056840172682617L;
@@ -80,9 +80,7 @@ public class PremiumAccountTableModel extends ExtTableModel<AccountEntry> implem
                     return super.format(number, sb, pos);
                 }
             };
-
             replaceSorter(this);
-
         }
 
         @Override
@@ -134,12 +132,12 @@ public class PremiumAccountTableModel extends ExtTableModel<AccountEntry> implem
             final AccountTrafficView accountTrafficView = acc.getAccountTrafficView();
             if (accountTrafficView == null) {
                 return "";
-            }
-            if (accountTrafficView.isUnlimitedTraffic()) {
+            } else if (accountTrafficView.isUnlimitedTraffic()) {
                 return _GUI.T.premiumaccounttablemodel_column_trafficleft_unlimited();
-            }
-            synchronized (formatter) {
-                return _GUI.T.premiumaccounttablemodel_column_trafficleft_left_(SIZEUNIT.formatValue(maxSizeUnit, formatter, accountTrafficView.getTrafficLeft()), SIZEUNIT.formatValue(maxSizeUnit, formatter, accountTrafficView.getTrafficMax()));
+            } else {
+                synchronized (formatter) {
+                    return _GUI.T.premiumaccounttablemodel_column_trafficleft_left_(SIZEUNIT.formatValue(maxSizeUnit, formatter, accountTrafficView.getTrafficLeft()), SIZEUNIT.formatValue(maxSizeUnit.toNonNegativeUnit(), formatter, accountTrafficView.getTrafficMax()));
+                }
             }
         }
 

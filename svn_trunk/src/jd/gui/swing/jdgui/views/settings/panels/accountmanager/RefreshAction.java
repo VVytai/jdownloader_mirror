@@ -7,6 +7,7 @@ import java.util.List;
 import javax.swing.AbstractAction;
 
 import org.appwork.utils.event.queue.QueueAction;
+import org.appwork.utils.swing.EDTRunner;
 import org.appwork.utils.swing.dialog.Dialog;
 import org.jdownloader.gui.IconKey;
 import org.jdownloader.gui.helpdialogs.HelpDialog;
@@ -14,12 +15,16 @@ import org.jdownloader.gui.helpdialogs.MessageConfig;
 import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.images.AbstractIcon;
 
+import jd.SecondLevelLaunch;
 import jd.controlling.AccountController;
+import jd.controlling.AccountControllerEvent;
+import jd.controlling.AccountControllerListener;
+import jd.controlling.AccountFilter;
 import jd.controlling.TaskQueue;
 import jd.controlling.accountchecker.AccountChecker;
 import jd.plugins.Account;
 
-public class RefreshAction extends AbstractAction {
+public class RefreshAction extends AbstractAction implements AccountControllerListener {
     /**
      *
      */
@@ -30,12 +35,24 @@ public class RefreshAction extends AbstractAction {
         selection = null;
         this.putValue(NAME, _GUI.T.settings_accountmanager_refresh());
         this.putValue(AbstractAction.SMALL_ICON, new AbstractIcon(IconKey.ICON_REFRESH, 16));
+        initAccountControllerListener();
     }
 
     public RefreshAction(List<AccountEntry> selectedObjects) {
         selection = selectedObjects != null ? selectedObjects : new ArrayList<AccountEntry>();
         this.putValue(NAME, _GUI.T.settings_accountmanager_refresh());
         this.putValue(AbstractAction.SMALL_ICON, new AbstractIcon(IconKey.ICON_REFRESH, 16));
+        initAccountControllerListener();
+    }
+
+    protected void initAccountControllerListener() {
+        SecondLevelLaunch.ACCOUNTLIST_LOADED.executeWhenReached(new Runnable() {
+            @Override
+            public void run() {
+                AccountController.getInstance().getEventSender().addListener(RefreshAction.this, true);
+                updateEnabledState();
+            }
+        });
     }
 
     public void actionPerformed(ActionEvent e) {
@@ -64,16 +81,20 @@ public class RefreshAction extends AbstractAction {
         });
     }
 
+    /**
+     * Returns AccountFilter to filter accounts eligable for checking accounts when no specific accounts are selected -> For when user wants
+     * to check all accounts by clicking the check button once.
+     */
+    protected AccountFilter getAccountFilter() {
+        return new AccountFilter().setEnabled(true).setValid(true);
+    }
+
     private List<Account> getAccountsToCheck() {
-        final List<Account> accountsToCheck = new ArrayList<Account>();
         if (selection == null) {
             /* All [enabled] accounts */
-            for (final Account acc : AccountController.getInstance().list()) {
-                if (acc.isEnabled() && acc.isValid()) {
-                    accountsToCheck.add(acc);
-                }
-            }
+            return AccountController.getInstance().listAccounts(getAccountFilter());
         } else {
+            final List<Account> accountsToCheck = new ArrayList<Account>();
             /* Selected [enabled] accounts only */
             for (final AccountEntry accEntry : selection) {
                 final Account acc = accEntry.getAccount();
@@ -82,12 +103,8 @@ public class RefreshAction extends AbstractAction {
                 }
                 accountsToCheck.add(acc);
             }
+            return accountsToCheck;
         }
-        if (accountsToCheck.isEmpty()) {
-            /* Do nothing. This can happen if e.g. all selected items are disabled. */
-            return null;
-        }
-        return accountsToCheck;
     }
 
     public static void displayMultihosterDetailOverviewHelpDialog() {
@@ -96,24 +113,30 @@ public class RefreshAction extends AbstractAction {
 
     @Override
     public boolean isEnabled() {
-        if (selection == null) {
-            /* Toolbar / "refresh all" action: enabled only if at least one enabled account exists. */
-            for (final Account acc : AccountController.getInstance().list()) {
-                if (acc.isEnabled()) {
-                    return true;
-                }
-            }
-            return false;
+        if (selection != null && selection.size() > 0) {
+            return true;
         }
-        return selection.size() > 0;
+        /* Toolbar / "refresh all" action: enabled only if at least one enabled account without permanent error state exists. */
+        final List<Account> accs = AccountController.getInstance().listAccounts(getAccountFilter().setMaxResultsNum(1));
+        return accs.size() > 0;
     }
 
     /**
-     * Re-evaluates {@link #isEnabled()} and notifies listeners (e.g. the toolbar button) so they can update their
-     * enabled state. Since {@link #isEnabled()} is computed dynamically, callers must invoke this whenever the
-     * underlying account state may have changed.
+     * Re-evaluates {@link #isEnabled()} and notifies listeners (e.g. the toolbar button) so they can update their enabled state. Since
+     * {@link #isEnabled()} is computed dynamically, callers must invoke this whenever the underlying account state may have changed.
      */
     public void updateEnabledState() {
-        firePropertyChange("enabled", null, Boolean.valueOf(isEnabled()));
+        final boolean isEnabled = isEnabled();
+        new EDTRunner() {
+            @Override
+            protected void runInEDT() {
+                firePropertyChange("enabled", null, Boolean.valueOf(isEnabled));
+            }
+        };
+    }
+
+    @Override
+    public void onAccountControllerEvent(AccountControllerEvent event) {
+        updateEnabledState();
     }
 }

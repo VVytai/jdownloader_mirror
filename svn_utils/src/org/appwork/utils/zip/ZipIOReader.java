@@ -881,8 +881,11 @@ public class ZipIOReader {
 
     private LogInterface logger;
     private byte[]       indexSignature;
+    private byte[]       metaSignature;
+    private Object       archiveMeta;
     private String       signatureType;
     private Boolean      indexVerifyResult = null;
+    private Boolean      metaVerifyResult  = null;
 
     public LogInterface getLogger() {
         return logger;
@@ -958,14 +961,77 @@ public class ZipIOReader {
             }
         }
         try {
+            if (comment == null) {
+                throw new ZipIOException("The zip has no AWZ_SIG1 signature!");
+            }
             Map<String, Object> cont = Deser.get().fromString(comment, TypeRef.MAP);
             indexSignature = Base64.decode((String) cont.get(ZipIOWriter.I_SIG));
             salt = Base64.decode((String) cont.get(ZipIOWriter.SIG_SALT));
             signatureType = (String) cont.get(ZipIOWriter.TYPE);
+            archiveMeta = cont.get(ZipIOWriter.META);
+            final String mSig = (String) cont.get(ZipIOWriter.M_SIG);
+            metaSignature = mSig != null ? Base64.decode(mSig) : null;
             // System.out.println("Index:\r\n" + (String) cont.get("INDEX"));
             if (!ZipIOWriter.AWZ_SIG1.equals(signatureType)) {
                 throw ZipIOException.wrapOrAddSurpressed(null, new SignatureException("Unsupported Signature type: " + signatureType), null);
             }
+            if (archiveMeta != null && metaSignature == null) {
+                throw ZipIOException.wrapOrAddSurpressed(null, new SignatureException("Archive meta without mSig"), null);
+            }
+            if (archiveMeta == null && metaSignature != null) {
+                throw ZipIOException.wrapOrAddSurpressed(null, new SignatureException("mSig without archive meta"), null);
+            }
+        } catch (SerializerException e) {
+            throw ZipIOException.wrapOrAddSurpressed(null, e, null);
+        }
+    }
+
+    /**
+     * Archive-comment meta payload (may be null). Verifies {@link ZipIOWriter#M_SIG} when public key is set.
+     */
+    public Object getArchiveMeta() throws ZipIOException {
+        ensureSignatureDetails();
+        ensureMetaIsVerified();
+        return archiveMeta;
+    }
+
+    public boolean hasArchiveMeta() {
+        try {
+            ensureSignatureDetails();
+        } catch (ZipIOException e) {
+            return false;
+        }
+        return archiveMeta != null;
+    }
+
+    protected void ensureMetaIsVerified() throws ZipIOException {
+        if (signature == null || archiveMeta == null) {
+            return;
+        }
+        try {
+            if (metaVerifyResult != null) {
+                if (metaVerifyResult == Boolean.TRUE) {
+                    return;
+                } else {
+                    throw new SignatureException("Meta Signature Failed");
+                }
+            }
+            try {
+                final byte[] canonicalMeta = Deser.get().toByteArray(archiveMeta, org.appwork.serializer.SC.STORAGE);
+                signature.initVerify(publicKey);
+                signature.update(salt);
+                signature.update(canonicalMeta);
+                if (!signature.verify(metaSignature)) {
+                    throw new SignatureException("Meta Signature Failed");
+                }
+                metaVerifyResult = Boolean.TRUE;
+            } finally {
+                if (metaVerifyResult == null) {
+                    metaVerifyResult = Boolean.FALSE;
+                }
+            }
+        } catch (GeneralSecurityException e) {
+            throw ZipIOException.wrapOrAddSurpressed(null, e, null);
         } catch (SerializerException e) {
             throw ZipIOException.wrapOrAddSurpressed(null, e, null);
         }
@@ -1064,6 +1130,7 @@ public class ZipIOReader {
     }
 
     public void verify() throws SignatureException, ZipIOException {
+        ensureMetaIsVerified();
         for (ZipEntry ze : getZipFiles()) {
             if (ze.isDirectory()) {
                 verifyPathSignature(ze);

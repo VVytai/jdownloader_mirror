@@ -11,20 +11,6 @@ import java.util.regex.Pattern;
 
 import javax.swing.TransferHandler;
 
-import jd.controlling.ClipboardMonitoring;
-import jd.controlling.linkcrawler.CrawledLink;
-import jd.controlling.linkcrawler.CrawledPackage;
-import jd.controlling.linkcrawler.CrawledPackageView;
-import jd.controlling.packagecontroller.AbstractNode;
-import jd.controlling.packagecontroller.AbstractPackageChildrenNode;
-import jd.controlling.packagecontroller.AbstractPackageNode;
-import jd.gui.swing.jdgui.MainTabbedPane;
-import jd.parser.Regex;
-import jd.plugins.DownloadLink;
-import jd.plugins.FilePackage;
-import jd.plugins.FilePackageView;
-import jd.plugins.download.HashInfo;
-
 import org.appwork.utils.Files;
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.os.CrossSystem;
@@ -47,6 +33,20 @@ import org.jdownloader.gui.views.linkgrabber.LinkGrabberTable;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
 import org.jdownloader.settings.UrlDisplayType;
 import org.jdownloader.translate._JDT;
+
+import jd.controlling.ClipboardMonitoring;
+import jd.controlling.linkcrawler.CrawledLink;
+import jd.controlling.linkcrawler.CrawledPackage;
+import jd.controlling.linkcrawler.CrawledPackageView;
+import jd.controlling.packagecontroller.AbstractNode;
+import jd.controlling.packagecontroller.AbstractPackageChildrenNode;
+import jd.controlling.packagecontroller.AbstractPackageNode;
+import jd.gui.swing.jdgui.MainTabbedPane;
+import jd.parser.Regex;
+import jd.plugins.DownloadLink;
+import jd.plugins.FilePackage;
+import jd.plugins.FilePackageView;
+import jd.plugins.download.HashInfo;
 
 public class CopyGenericContextAction extends CustomizableTableContextAppAction implements ActionContext {
     private static final String PATTERN_NAME                  = "{name}";                      // depends on type
@@ -163,7 +163,6 @@ public class CopyGenericContextAction extends CustomizableTableContextAppAction 
 
     public <ParentType extends AbstractPackageNode<ChildrenType, ParentType>, ChildrenType extends AbstractPackageChildrenNode<ParentType>> SelectionInfoCallback<ParentType, ChildrenType> getCallback(final PackageControllerTable<ParentType, ChildrenType> table) {
         return new SelectionInfoCallback<ParentType, ChildrenType>() {
-
             @Override
             public void onSelectionInfo(SelectionInfo<ParentType, ChildrenType> selectionInfo) {
                 final String string = fromSelectionInfo(selectionInfo);
@@ -253,7 +252,11 @@ public class CopyGenericContextAction extends CustomizableTableContextAppAction 
     }
 
     private final String formatFileSize(final long fileSize, SIZEUNIT sizeUnit) {
-        return SIZEUNIT.formatValue(sizeUnit, fileSize);
+        if (fileSize < 0) {
+            return "~";
+        } else {
+            return SIZEUNIT.formatValue(sizeUnit, fileSize);
+        }
     }
 
     private final String toUpperCase(final String input) {
@@ -449,5 +452,4 @@ public class CopyGenericContextAction extends CustomizableTableContextAppAction 
     private final String nulltoString(final Object comment) {
         return StringUtils.valueOrEmpty(StringUtils.valueOfOrNull(comment));
     }
-
 }

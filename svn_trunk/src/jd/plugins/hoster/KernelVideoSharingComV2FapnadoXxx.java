@@ -17,13 +17,17 @@ package jd.plugins.hoster;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jd.PluginWrapper;
 import jd.http.Browser;
 import jd.parser.Regex;
+import jd.plugins.DownloadLink;
 import jd.plugins.HostPlugin;
+import jd.plugins.PluginException;
 
-@HostPlugin(revision = "$Revision: 53185 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 3, names = {}, urls = {})
 public class KernelVideoSharingComV2FapnadoXxx extends KernelVideoSharingComV2 {
     public KernelVideoSharingComV2FapnadoXxx(final PluginWrapper wrapper) {
         super(wrapper);
@@ -38,6 +42,52 @@ public class KernelVideoSharingComV2FapnadoXxx extends KernelVideoSharingComV2 {
 
     public static String[] getAnnotationNames() {
         return buildAnnotationNames(getPluginDomains());
+    }
+
+    @Override
+    protected String decryptDirectURLIfRequired(DownloadLink link, Browser br, String url) throws PluginException {
+        if (br.containsHTML("unfurl\\(\"" + Pattern.quote(url))) {
+            final String decrypted = decrypt_url(br, url);
+            return decrypted;
+        }
+        return super.decryptDirectURLIfRequired(link, br, url);
+    }
+
+    private String decrypt_url(final Browser br, String url) {
+        String magic = br.getRegex("var a = '(\\d+)'").getMatch(0);
+        if (magic == null) {
+            /* Use static fallback */
+            if (br.getHost().equals("fapnado.xxx")) {
+                magic = "59230349905716806800799377149365";
+            } else {
+                /* fapnado.com */
+                magic = "57498501723701598260159359313752";
+            }
+        }
+        Pattern pattern = Pattern.compile("/[0-9]+/([^/]+)/");
+        Matcher matcher = pattern.matcher(url);
+        if (!matcher.find()) {
+            return url;
+        }
+        String encoded = matcher.group(1);
+        // unfash inline
+        char[] chars = encoded.toCharArray();
+        for (int c = chars.length - 1; c >= 0; c--) {
+            int b = c;
+            for (int d = c; d < 32; d++) {
+                int digit = Character.getNumericValue(magic.charAt(d));
+                b += digit;
+            }
+            while (b >= chars.length) {
+                b -= chars.length;
+            }
+            // Swap characters at positions c and b
+            char temp = chars[c];
+            chars[c] = chars[b];
+            chars[b] = temp;
+        }
+        String decoded = new String(chars);
+        return url.replace(encoded, decoded);
     }
 
     @Override

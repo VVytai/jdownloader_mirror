@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.appwork.utils.StringUtils;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter;
@@ -41,7 +42,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.decrypter.PixhostToGallery;
 
-@HostPlugin(revision = "$Revision: 53159 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53216 $", interfaceVersion = 3, names = {}, urls = {})
 public class PixhostTo extends PluginForHost {
     public PixhostTo(PluginWrapper wrapper) {
         super(wrapper);
@@ -183,11 +184,11 @@ public class PixhostTo extends PluginForHost {
         } else if (PixhostToGallery.isCountryBlocked(br)) {
             throw new PluginException(LinkStatus.ERROR_IP_BLOCKED, "GEO blocked");
         }
-        final boolean isPartOfGallery = br.containsHTML("class=\"show-gallery\"");
+        final boolean isPartOfGallery = br.containsHTML("class\\s*=\\s*\"[^\"]*show-(?:toolbar-)?gallery[^\"]*\"");
         /* 2019-01-31: It is better to grab the filename via URL! */
         String filename = br.getRegex("title\\s*:\\s*'([^<>\"\\']+)'").getMatch(0);
         if (StringUtils.isEmpty(filename)) {
-            filename = br.getRegex("class=\"fa fa-picture-o\"[^>]*>\\s*</i>\\s*([^<]+)\\s*<").getMatch(0);
+            filename = br.getRegex("class\\s*=\\s*\"fa fa-picture-o\"[^>]*>\\s*</i>\\s*([^<]+)\\s*<").getMatch(0);
         }
         if (isPartOfGallery || StringUtils.isEmpty(filename)) {
             /*
@@ -200,7 +201,7 @@ public class PixhostTo extends PluginForHost {
          * Picture might be part of a gallery and website will have an array of all of them --> Make sure that we grab the correct
          * downloadurl.
          */
-        final String json_for_current_object = br.getRegex("\\{[^\\}]*?" + filenameFromURL + "[^\\}]*?\\}").getMatch(-1);
+        final String json_for_current_object = br.getRegex("\\{[^\\}]*?" + Pattern.quote(filenameFromURL) + "[^\\}]*?\\}").getMatch(-1);
         if (json_for_current_object != null) {
             dllink = new Regex(json_for_current_object, "src\\s*?:\\s*?\\'(http[^\"\\']+)\\'").getMatch(0);
         }

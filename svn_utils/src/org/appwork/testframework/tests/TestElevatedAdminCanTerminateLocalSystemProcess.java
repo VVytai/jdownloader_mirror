@@ -10,6 +10,8 @@ package org.appwork.testframework.tests;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.EnumSet;
+import java.util.Set;
 
 import org.appwork.exceptions.NotSupportedException;
 import org.appwork.loggingv3.LogV3;
@@ -18,6 +20,7 @@ import org.appwork.processes.ProcessInfo;
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.testframework.executer.ProcessOptions;
@@ -35,6 +38,11 @@ public class TestElevatedAdminCanTerminateLocalSystemProcess extends AWTest impl
 
     public static void main(String[] args) {
         run();
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

@@ -41,7 +41,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.regex.Pattern;
 
-import org.appwork.builddecision.BuildDecisionRequired;
 import org.appwork.exceptions.WTFException;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.testframework.AWTest;
@@ -85,23 +84,6 @@ public class ScanClassStrings extends AWTest {
 
             @Override
             public void handle(Class<?> type) throws Exception {
-                BuildDecisionRequired buildDec = type.getAnnotation(BuildDecisionRequired.class);
-                if (buildDec != null) {
-                    for (String str : buildDec.imports()) {
-                        for (String s : str.split(";")) {
-                            if (StringUtils.isEmpty(s)) {
-                                continue;
-                            }
-                            try {
-                                Class.forName(s);
-                            } catch (Throwable e) {
-                                LogV3.warning("Invalid Class Definition in  " + buildDec + " - " + type);
-                                LogV3.log(e);
-                                throw new WTFException(e);
-                            }
-                        }
-                    }
-                }
                 TestDependency testDep = type.getAnnotation(TestDependency.class);
                 if (testDep != null) {
                     for (String str : testDep.value()) {

@@ -34,39 +34,32 @@
  * ==================================================================================================================================================== */
 package org.appwork;
 
-import org.appwork.builddecision.BuildDecisionRequired;
+import org.appwork.loggingv3.LogV3;
 import org.appwork.testhelper.AWTestValidateClassReference;
+import org.appwork.utils.Application;
+import org.appwork.utils.Exceptions;
 
 /**
  * @author thomas
  * @date 19.11.2024
  *
  */
-@BuildDecisionRequired(tags = { JNAHelper.JNA_HELPER_USE_JNA, JNAHelper.JNA_HELPER_NO_JNA }, imports = { JNAHelper.CLASS_COM_SUN_JNA_NATIVE + ";" + JNAHelper.CLASS_COM_SUN_JNA_PLATFORM_FILE_UTILS, "" })
 public class JNAHelper {
     /**
      *
      */
-    public static final String JNA_HELPER_NO_JNA                     = "JNAHelper.noJNA";
-    /**
-     *
-     */
     @AWTestValidateClassReference(classpath = ".*/?jna[_-]platform\\.jar")
-    public static final String CLASS_COM_SUN_JNA_PLATFORM_FILE_UTILS = "com.sun.jna.platform.FileUtils";
+    public static final String  CLASS_COM_SUN_JNA_PLATFORM_FILE_UTILS  = "com.sun.jna.platform.FileUtils";
     /**
      *
      */
     @AWTestValidateClassReference(classpath = ".*/?jna\\.jar")
-    public static final String CLASS_COM_SUN_JNA_NATIVE              = "com.sun.jna.Native";
+    public static final String  CLASS_COM_SUN_JNA_NATIVE               = "com.sun.jna.Native";
+    private static boolean      unsupportedClassVersionError           = false;
+    private static Boolean      JNA_AVAILABLE                          = null;
     /**
-     *
-     */
-    public static final String JNA_HELPER_USE_JNA                    = "JNAHelper.useJNA";
-    private static boolean     unsupportedClassVersionError          = false;
-
-    /**
-     * System property to override JNA availability for testing purposes
-     * Set to "false" to force JNA unavailable even if JNA is actually available
+     * System property to override JNA availability for testing purposes Set to "false" to force JNA unavailable even if JNA is actually
+     * available
      */
     private static final String SYSTEM_PROPERTY_JNA_AVAILABLE_OVERRIDE = "JNAHelper.isJNAAvailable.override";
 
@@ -79,20 +72,30 @@ public class JNAHelper {
         if (override != null) {
             return Boolean.parseBoolean(override);
         }
-        
+        boolean available = true;
         try {
+            if (JNA_AVAILABLE != null) {
+                return Boolean.TRUE.equals(JNA_AVAILABLE);
+            }
             if (unsupportedClassVersionError) {
                 return false;
             }
             // Try to load the JNA class
             Class.forName(CLASS_COM_SUN_JNA_NATIVE, false, JNAHelper.class.getClassLoader());
+            LogV3.info("JNA available! " + Application.getRessourceURL(CLASS_COM_SUN_JNA_NATIVE.replace(".", "/") + ".class"));
             return true;
         } catch (final UnsupportedClassVersionError e) {
+            available = false;
+            LogV3.info("JNA not available: \r\n" + Exceptions.getStackTrace(e));
             unsupportedClassVersionError = true;
             // JNA >=5.14.0 requires minimum JDK8
             return false;
         } catch (final Exception e) {
+            available = false;
+            LogV3.info("JNA not available: \r\n" + Exceptions.getStackTrace(e));
             return false;
+        } finally {
+            JNA_AVAILABLE = available;
         }
     }
 }

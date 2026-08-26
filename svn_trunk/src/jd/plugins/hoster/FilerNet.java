@@ -25,6 +25,18 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import org.appwork.storage.JSonMapperException;
+import org.appwork.storage.JSonStorage;
+import org.appwork.storage.TypeRef;
+import org.appwork.utils.ReflectionUtils;
+import org.appwork.utils.StringUtils;
+import org.jdownloader.captcha.v2.CaptchaHosterHelperInterface;
+import org.jdownloader.captcha.v2.challenge.hcaptcha.CaptchaHelperHostPluginHCaptcha;
+import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperHostPluginRecaptchaV2;
+import org.jdownloader.plugins.controller.LazyPlugin;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.staticreferences.CFG_GUI;
+
 import jd.PluginWrapper;
 import jd.config.ConfigContainer;
 import jd.config.ConfigEntry;
@@ -46,17 +58,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-import org.appwork.storage.JSonMapperException;
-import org.appwork.storage.JSonStorage;
-import org.appwork.storage.TypeRef;
-import org.appwork.utils.ReflectionUtils;
-import org.appwork.utils.StringUtils;
-import org.jdownloader.captcha.v2.CaptchaHosterHelperInterface;
-import org.jdownloader.captcha.v2.challenge.hcaptcha.CaptchaHelperHostPluginHCaptcha;
-import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperHostPluginRecaptchaV2;
-import org.jdownloader.plugins.controller.LazyPlugin;
-
-@HostPlugin(revision = "$Revision: 52994 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 2, names = {}, urls = {})
 public class FilerNet extends PluginForHost {
     private static final int    STATUSCODE_APIDISABLED                             = 400;
     private static final String ERRORMESSAGE_APIDISABLEDTEXT                       = "API is disabled, please wait or use filer.net in your browser";
@@ -68,7 +70,6 @@ public class FilerNet extends PluginForHost {
     private static final String PREMIUM_ONLY                                       = "premium_only";
     private static final String DIRECT_API                                         = "directlinkApi";
     /* Plugin settings */
-
     private static final String SETTING_WAIT_MINUTES_ON_ERROR_NO_FREE_SLOTS        = "WAIT_MINUTES_ON_NO_FREE_SLOTS";
     private static final int    defaultSETTING_WAIT_MINUTES_ON_ERROR_NO_FREE_SLOTS = 10;
     private static final String SETTING_WAIT_MINUTES_ON_ERROR_CODE_415             = "SETTING_WAIT_MINUTES_ON_ERROR_CODE_415";
@@ -431,6 +432,7 @@ public class FilerNet extends PluginForHost {
         final Map<String, Object> entries = (Map<String, Object>) loginAPI(account, true);
         final Map<String, Object> data = (Map<String, Object>) entries.get("data");
         final AccountInfo ai = new AccountInfo();
+        ai.setTrafficRefill(true);
         final Number register_date = (Number) data.get("register_date");
         if (register_date != null) {
             ai.setCreateTime(register_date.longValue() * 1000);
@@ -444,6 +446,22 @@ public class FilerNet extends PluginForHost {
                 ai.setTrafficLeft(trafficLeft.longValue());
                 if (trafficUsed != null) {
                     ai.setTrafficMax(trafficLeft.longValue() + trafficUsed.longValue());
+                }
+                if (trafficLeft.longValue() < 0) {
+                    /* 2026-08-25: Small workaround to display negative traffic in GUI. */
+                    final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
+                    final long negativeTrafficBytes = Math.abs(trafficLeft.longValue());
+                    final String negativeTrafficFormatted = SIZEUNIT.formatValue(maxSizeUnit, negativeTrafficBytes);
+                    /*
+                     * Negative traffic recovers over time: 50 GB is added back every 24 hours (which equals 1 GB every 28.8 minutes).
+                     * Calculate how long we need to wait until the account has positive traffic again.
+                     */
+                    final long recoveryBytesPerInterval = 50 * (1024 * 1024 * 1024l); /* 50 GB */
+                    final long recoveryIntervalMillis = TimeUnit.HOURS.toMillis(24); /* 24 hours */
+                    long waitMillis = negativeTrafficBytes * recoveryIntervalMillis / recoveryBytesPerInterval;
+                    /* No matter what gets calculated the minimum wait time shall be 1 minute. */
+                    waitMillis = Math.max(waitMillis, TimeUnit.MINUTES.toMillis(1));
+                    throw new AccountUnavailableException("Kein Traffic übrig: -" + negativeTrafficFormatted, waitMillis);
                 }
             }
             final Long validUntil = (Long) ReflectionUtils.cast(data.get("until"), Long.class);

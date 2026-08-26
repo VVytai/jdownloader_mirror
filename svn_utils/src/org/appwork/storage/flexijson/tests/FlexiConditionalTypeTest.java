@@ -37,7 +37,6 @@ import org.appwork.remoteapi.annotations.AllowNonStorableObjects;
 import org.appwork.storage.SimpleTypeRef;
 import org.appwork.storage.Storable;
 import org.appwork.storage.StorableConditionalType;
-import org.appwork.storage.StorableConditionalType2;
 import org.appwork.storage.flexijson.FlexiJSONParser;
 import org.appwork.storage.flexijson.mapper.FlexiJSonMapper;
 import org.appwork.testframework.AWTest;
@@ -110,7 +109,7 @@ public class FlexiConditionalTypeTest extends AWTest {
         }
 
         @StorableConditionalType(condition = "{a:1}", cls = OptionA.class)
-        @StorableConditionalType2(condition = "{a:2}", cls = OptionB.class)
+        @StorableConditionalType(condition = "{a:2}", cls = OptionB.class)
         @AllowNonStorableObjects
         private Object o;
     }

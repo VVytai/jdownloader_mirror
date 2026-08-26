@@ -48,6 +48,7 @@ import java.util.regex.Pattern;
 import org.appwork.net.protocol.http.HTTPConstants;
 import org.appwork.net.protocol.http.HTTPConstants.ResponseCode;
 import org.appwork.utils.DebugMode;
+import org.appwork.utils.StringUtils;
 import org.appwork.utils.net.HTTPHeader;
 import org.appwork.utils.net.HeaderCollection;
 import org.appwork.utils.net.httpconnection.RequestMethod;
@@ -193,6 +194,11 @@ public class CorsHandler {
     private Set<RequestMethod>              allowMethods;
     private String                          allowHeaders;
     private boolean                         allowHeadersFromRequest    = false;
+    /**
+     * When true, requests whose {@code Origin} matches this server's own origin (scheme + {@code Host}) are allowed even if
+     * {@link #allowedOrigins} is null/empty. Browsers send {@code Origin} on same-origin {@code fetch}/XHR; that is not cross-origin.
+     */
+    private boolean                         allowSameOrigin            = false;
     private Long                            maxAge;
 
     /**
@@ -584,6 +590,55 @@ public class CorsHandler {
         this.enableSecurityValidation = enableSecurityValidation;
     }
 
+    /**
+     * @return true if same-origin {@code Origin} requests are allowed without an explicit {@link OriginRule}
+     */
+    public boolean isAllowSameOrigin() {
+        return this.allowSameOrigin;
+    }
+
+    /**
+     * Allows browser same-origin requests that still send an {@code Origin} header (typical for {@code fetch}/XHR with
+     * {@code Sec-Fetch-Mode: cors}), without opening cross-origin access. Useful for servers that serve a website and an API on the same
+     * host while keeping {@link #setAllowedOrigins(List)} null/empty for foreign origins.
+     *
+     * @param allowSameOrigin
+     *            true to allow Origin matching scheme + Host of this request
+     */
+    public void setAllowSameOrigin(final boolean allowSameOrigin) {
+        this.allowSameOrigin = allowSameOrigin;
+    }
+
+    /**
+     * Whether {@code Origin} equals this request's own origin ({@code http(s)://} + {@code Host} header).
+     */
+    public boolean isSameOriginRequest(final HttpRequest request) {
+        if (request == null) {
+            return false;
+        }
+        final HeaderCollection requestHeaders = request.getRequestHeaders();
+        if (requestHeaders == null) {
+            return false;
+        }
+        return this.isSameOriginRequest(request, requestHeaders.getValue(HTTPConstants.HEADER_REQUEST_ORIGIN));
+    }
+
+    protected boolean isSameOriginRequest(final HttpRequest request, final String origin) {
+        if (request == null || StringUtils.isEmpty(origin)) {
+            return false;
+        }
+        final HeaderCollection requestHeaders = request.getRequestHeaders();
+        if (requestHeaders == null) {
+            return false;
+        }
+        final String host = requestHeaders.getValue(HTTPConstants.HEADER_REQUEST_HOST);
+        if (StringUtils.isEmpty(host)) {
+            return false;
+        }
+        final String expectedOrigin = (request.isSSL() ? "https://" : "http://") + host;
+        return origin.equalsIgnoreCase(expectedOrigin);
+    }
+
     public void validate() {
         if (!this.enableSecurityValidation) {
             // Only check for critical errors that would cause direct runtime failures
@@ -646,12 +701,15 @@ public class CorsHandler {
             // No Origin header present - allow (direct browser navigation)
             return true;
         }
-        final List<OriginRule> rules = getAllowedOrigins();
-        if (rules == null || rules.size() == 0) {
-            return false;
-        }
         // For preflight requests, also validate the requested method
         if (!isRequestedMethodAllowed(request)) {
+            return false;
+        }
+        if (this.allowSameOrigin && this.isSameOriginRequest(request, origin)) {
+            return true;
+        }
+        final List<OriginRule> rules = getAllowedOrigins();
+        if (rules == null || rules.size() == 0) {
             return false;
         }
         // Get request path directly from HttpRequest

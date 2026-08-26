@@ -60,7 +60,7 @@ import jd.plugins.components.PluginJSonUtils;
 import jd.plugins.hoster.DirectHTTP;
 import jd.plugins.hoster.PornHubCom;
 
-@DecrypterPlugin(revision = "$Revision: 52787 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53209 $", interfaceVersion = 3, names = {}, urls = {})
 public class PornHubComVideoCrawler extends PluginForDecrypt {
     @SuppressWarnings("deprecation")
     public PornHubComVideoCrawler(PluginWrapper wrapper) {
@@ -329,12 +329,14 @@ public class PornHubComVideoCrawler extends PluginForDecrypt {
                 }
             }
             final String vkeyregex = "(?:_|-)vkey\\s*=\\s*\"(.+?)\"";
-            for (final String section : new String[] { "moreData", "mostRecentVideosSection", "pornstarsVideoSection" }) {
+            for (final String section : new String[] { "newVerticalVideos", "moreData", "mostRecentVideosSection", "pornstarsVideoSection" }) {
                 final String sectionContent = findVideoSection(br, section);
                 if (sectionContent == null) {
+                    logger.info("VideoSection:" + section + " not found!");
                     continue;
                 }
                 final String[] vKeys = new Regex(sectionContent, vkeyregex).getColumn(0);
+                logger.info("VideoSection:" + section + " found:" + (vKeys == null ? 0 : vKeys.length));
                 if (vKeys != null) {
                     viewKeys.addAll(Arrays.asList(vKeys));
                 }
@@ -411,7 +413,7 @@ public class PornHubComVideoCrawler extends PluginForDecrypt {
     }
 
     private String findVideoSection(final Browser br, final String section) {
-        String html = br.getRegex("(<ul[^>]*(?:class\\s*=\\s*\"videos[^>]*id\\s*=\\s*\"" + section + "\"|[^>]*id\\s*=\\s*\"" + section + "\"[^>]*class\\s*=\\s*\"videos[^>]).*?)(<ul\\s*class\\s*=\\s*\"videos|</ul>)").getMatch(0);
+        String html = br.getRegex("(<ul[^>]*(?:class\\s*=\\s*\"[^\"]*videos[^>]*(?:id\\s*=\\s*\")?" + section + "|(?:[^>]*id\\s*=\\s*\")?" + section + "[^>]*class\\s*=\\s*\"[^\"]*videos[^>]).*?)(<ul\\s*class\\s*=\\s*\"[^\"]*videos|</ul>)").getMatch(0);
         if (html != null) {
             return html;
         }

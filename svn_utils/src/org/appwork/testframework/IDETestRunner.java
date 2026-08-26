@@ -264,9 +264,12 @@ public class IDETestRunner {
                     }
                 }
             }
+            // UAC/INTERACTIVE first so remaining tests need no user attention
+            TestTag.moveUserAttentionClassNamesFirst(testClasses);
         }
         AWTest.logInfoAnyway("Found  " + testClassesFound + " - Skipped Tests: " + skippedTestClasses);
         TestCaseReporter.beginRun("IDE", TestCaseReporter.getReportDirectory(Application.getResource("reports")));
+        TestCaseReporter.attachIdeLocalLinks();
         DependencyJavaSourceFingerprint.clearRunFileHashCache();
         final List<File> ideSourceRoots = DependencyJavaSourceFingerprint.resolveSourceRootsFromClasspathAndExtra(null);
         int count = 0;

@@ -5,16 +5,12 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 
 import javax.swing.AbstractAction;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JComboBox;
-
-import jd.controlling.AccountController;
-import jd.controlling.TaskQueue;
 
 import org.appwork.swing.components.searchcombo.SearchComboBox;
 import org.appwork.uio.UIOManager;
@@ -37,6 +33,10 @@ import org.jdownloader.plugins.controller.host.HostPluginController;
 import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 import org.jdownloader.premium.BuyAndAddPremiumAccount;
 import org.jdownloader.premium.BuyAndAddPremiumDialogInterface;
+
+import jd.controlling.AccountController;
+import jd.controlling.TaskQueue;
+import jd.plugins.PluginForHost;
 
 public class BuyAction extends AbstractAction {
     /**
@@ -81,31 +81,25 @@ public class BuyAction extends AbstractAction {
             @Override
             protected Void run() throws RuntimeException {
                 final Collection<LazyHostPlugin> pluginsAll = HostPluginController.getInstance().list();
-                final java.util.List<LazyHostPlugin> plugins = new ArrayList<LazyHostPlugin>();
+                final List<LazyHostPlugin> plugins = new ArrayList<LazyHostPlugin>();
                 /* only show plugins with account support */
-                for (LazyHostPlugin lhp : pluginsAll) {
+                for (final LazyHostPlugin lhp : pluginsAll) {
                     if (lhp.isPremium()) {
                         plugins.add(lhp);
                     }
                 }
                 final LazyHostPlugin[] options = plugins.toArray(new LazyHostPlugin[plugins.size()]);
                 LazyHostPlugin plg = null;
-                /* If an entry is selected in the table, preselect its hoster. */
-                if (selection != null && selection.size() > 0) {
-                    final String selectedHoster = selection.get(0).getAccount().getHoster();
-                    plg = HostPluginController.getInstance().get(selectedHoster);
-                    if (plg == null) {
-                        for (Iterator<?> iterator = plugins.iterator(); iterator.hasNext();) {
-                            LazyHostPlugin hostPluginWrapper = (LazyHostPlugin) iterator.next();
-                            if (hostPluginWrapper.getDisplayName().equals(selectedHoster)) {
-                                plg = hostPluginWrapper;
-                                break;
-                            }
-                        }
+                plg: if (selection != null && selection.size() > 0) {
+                    /* If an entry is selected in the table, preselect its hoster. */
+                    final PluginForHost plugin = selection.get(0).getAccount().getPlugin();
+                    if (plugin != null) {
+                        plg = plugin.getLazyP();
+                        break plg;
                     }
                 }
-                /* No selection (or selected hoster not found) -> fall back to the default preselection. */
                 if (plg == null) {
+                    /* No selection (or selected hoster not found) -> fall back to the default preselection. */
                     plg = HostPluginController.getInstance().get(getPreselectedHoster());
                 }
                 final LazyHostPlugin defaultSelection = plg;

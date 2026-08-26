@@ -50,7 +50,6 @@ import net.miginfocom.swing.MigLayout;
 
 public class InfoDialog extends JWindow implements ActionListener, MouseListener, MouseMotionListener, GenericConfigEventListener<Integer>, WindowListener {
     private static final long               serialVersionUID = 4715904261105562064L;
-    private static final int                DOCKING_DISTANCE = 25;
     private final DragDropHandler           ddh;
     private NullsafeAtomicReference<Thread> updater          = new NullsafeAtomicReference<Thread>(null);
     private Point                           point;
@@ -221,17 +220,18 @@ public class InfoDialog extends JWindow implements ActionListener, MouseListener
                 new EDTRunner() {
                     @Override
                     protected void runInEDT() {
-                        if (isVisible()) {
-                            long totalDl = dla.getTotalBytes();
-                            long curDl = dla.getBytesLoaded();
-                            final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
-                            lblProgress.setText(SIZEUNIT.formatValue(maxSizeUnit, curDl) + " / " + SIZEUNIT.formatValue(maxSizeUnit, totalDl));
-                            lblETA.setText(Formatter.formatSeconds(dla.getEta()));
-                            prgTotal.setMaximum(Math.max(1, totalDl));
-                            prgTotal.setValue(Math.max(0, curDl));
-                        } else {
+                        if (!isVisible()) {
                             updater.compareAndSet(thread, null);
+                            return;
                         }
+                        long totalDl = dla.getTotalBytes();
+                        long curDl = dla.getBytesLoaded();
+                        final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
+                        /* Negative values mean "unknown" and must be displayed as "~", not as an absolute byte value. */
+                        lblProgress.setText((curDl < 0 ? "~" : SIZEUNIT.formatValue(maxSizeUnit, curDl)) + " / " + (totalDl < 0 ? "~" : SIZEUNIT.formatValue(maxSizeUnit, totalDl)));
+                        lblETA.setText(Formatter.formatSeconds(dla.getEta()));
+                        prgTotal.setMaximum(Math.max(1, totalDl));
+                        prgTotal.setValue(Math.max(0, curDl));
                     }
                 }.waitForEDT();
                 try {

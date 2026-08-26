@@ -59,7 +59,6 @@ import javax.swing.Icon;
 
 import org.appwork.utils.Application;
 import org.appwork.utils.DebugMode;
-import org.appwork.utils.swing.EDT;
 
 /**
  * @author thomas
@@ -70,6 +69,7 @@ public class DebugIcon extends AbstractIconPipe {
     private static boolean CTRL_PRESSED = false;
     static {
         if (DebugMode.TRUE_IN_IDE_ELSE_FALSE && !Application.isHeadless()) {
+            // KeyEventDispatcher already runs on the EDT
             KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(new KeyEventDispatcher() {
                 @Override
                 public boolean dispatchKeyEvent(KeyEvent e) {
@@ -78,18 +78,12 @@ public class DebugIcon extends AbstractIconPipe {
                         boolean old = CTRL_PRESSED;
                         CTRL_PRESSED = (e.getID() == KeyEvent.KEY_PRESSED);
                         if (old != CTRL_PRESSED) {
-                            new EDT<Void, RuntimeException>() {
-                                @Override
-                                protected Void runInEDT() throws RuntimeException {
-                                    for (Window window : Window.getWindows()) {
-                                        window.invalidate();
-                                        window.validate();
-                                        window.repaint();
-                                    }
-                                    System.out.println("Redraw");
-                                    return null;
-                                }
-                            }.start();
+                            for (Window window : Window.getWindows()) {
+                                window.invalidate();
+                                window.validate();
+                                window.repaint();
+                            }
+                            System.out.println("Redraw");
                         }
                     }
                     return false;

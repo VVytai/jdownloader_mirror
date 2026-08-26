@@ -44,6 +44,7 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,8 +54,6 @@ import java.util.Set;
 import javax.swing.JLabel;
 import javax.swing.JScrollPane;
 import javax.swing.table.TableCellEditor;
-
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.storage.JSonStorage;
 import org.appwork.storage.TypeRef;
@@ -65,6 +64,7 @@ import org.appwork.swing.exttable.columns.ExtCheckColumn;
 import org.appwork.swing.exttable.columns.ExtTextColumn;
 import org.appwork.testframework.TestCaseReporter;
 import org.appwork.testframework.TestInterface;
+import org.appwork.testframework.TestTag;
 import org.appwork.utils.Application;
 import org.appwork.utils.BinaryLogic;
 import org.appwork.utils.Files;
@@ -107,6 +107,11 @@ public class JavaFileLineEndingAWTest implements TestInterface {
     @Override
     public boolean isSkipOnUnchangedDependencies() {
         return false;
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.INTERACTIVE);
     }
 
     @Override
@@ -520,7 +525,6 @@ public class JavaFileLineEndingAWTest implements TestInterface {
     }
 
     public static void main(String[] args) throws Exception {
-        BuildDecisions.setEnabled(false);
         Application.setApplication(".tests");
         JavaFileLineEndingAWTest test = new JavaFileLineEndingAWTest();
         if (!test.runObserverModeFromMain()) {

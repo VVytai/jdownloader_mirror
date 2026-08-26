@@ -34,6 +34,7 @@
 package org.appwork.testframework;
 
 import java.io.File;
+import java.util.Set;
 
 /**
  * @author thomas
@@ -53,6 +54,14 @@ public interface PostBuildTestInterface {
      * @return true to allow skip on unchanged deps, false to always run
      */
     boolean isSkipOnUnchangedDependencies();
+
+    /**
+     * Optional tags (e.g. {@link TestTag#UAC}, {@link TestTag#INTERACTIVE}). Default empty. Runners schedule tagged tests that need user
+     * attention first.
+     *
+     * @return non-null set; callers must not modify it
+     */
+    Set<TestTag> getTags();
 
     /**
      * Reports a successful sub-test case for the HTML test report (optional; no-op when reporting is disabled).

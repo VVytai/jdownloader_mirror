@@ -110,17 +110,17 @@ public class NewTheme extends Theme {
     }
 
     public static Set<Color> getInner25PercentColors(BufferedImage image) {
-        Set<Color> colors = new HashSet<Color>();
-        int width = image.getWidth();
-        int height = image.getHeight();
-        int startX = width / 4;
-        int startY = height / 4;
-        int innerWidth = width / 2;
-        int innerHeight = height / 2;
+        final Set<Color> colors = new HashSet<Color>();
+        final int width = image.getWidth();
+        final int height = image.getHeight();
+        final int startX = width / 4;
+        final int startY = height / 4;
+        final int innerWidth = width / 2;
+        final int innerHeight = height / 2;
         for (int y = startY; y < startY + innerHeight; y++) {
             for (int x = startX; x < startX + innerWidth; x++) {
-                int rgb = image.getRGB(x, y);
-                Color color = new Color(rgb, true);
+                final int rgb = image.getRGB(x, y);
+                final Color color = new Color(rgb, true);
                 colors.add(color);
             }
         }
@@ -137,22 +137,22 @@ public class NewTheme extends Theme {
      * @return
      */
     public Icon getCheckBoxImage(String path, boolean selected, int size, Color red) {
-        Icon ret = null;
-        String key = this.getCacheKey(path + "/" + red, size, selected);
-        ret = getCached(key);
-        if (ret == null) {
-            Icon back = getIcon(path, size);
-            Icon checkBox = selected ? new CheckBoxIcon((int) (1 * (0.5d * size)), selected, true) : new CheckBoxIcon((int) (1 * (0.5d * size)), selected, true);
-            if (red != null) {
-                ColoredIcon colored = new ColoredIcon(checkBox);
-                for (Color c : getInner25PercentColors(IconIO.toBufferedImage(CheckBoxIcon.FALSE))) {
-                    colored.replace(new ColorLookup(c, 20, true), red);
-                }
-                checkBox = colored;
-            }
-            ret = new ExtMergedIcon(back, 0, 0).add(checkBox, 0, back.getIconHeight() - checkBox.getIconHeight() + 2);
-            cache(ret, key);
+        final String key = this.getCacheKey(path + "/" + red, size, selected);
+        Icon ret = getCached(key);
+        if (ret != null) {
+            return ret;
         }
+        final Icon back = getIcon(path, size);
+        Icon checkBox = selected ? new CheckBoxIcon((int) (1 * (0.5d * size)), selected, true) : new CheckBoxIcon((int) (1 * (0.5d * size)), selected, true);
+        if (red != null) {
+            final ColoredIcon colored = new ColoredIcon(checkBox);
+            for (Color c : getInner25PercentColors(IconIO.toBufferedImage(CheckBoxIcon.FALSE))) {
+                colored.replace(new ColorLookup(c, 20, true), red);
+            }
+            checkBox = colored;
+        }
+        ret = new ExtMergedIcon(back, 0, 0).add(checkBox, 0, back.getIconHeight() - checkBox.getIconHeight() + 2);
+        cache(ret, key);
         return ret;
     }
 }

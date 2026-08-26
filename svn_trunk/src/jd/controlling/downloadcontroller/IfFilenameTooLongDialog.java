@@ -161,7 +161,9 @@ public class IfFilenameTooLongDialog extends AbstractDialog<IfFilenameTooLongAct
         updateNewFilenameCharactersLeftTextAndColor();
         p.add(SwingUtils.toBold(new JLabel("Filesize:")), "split 2,sg 1");
         final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
-        p.add(new JLabel(SIZEUNIT.formatValue(maxSizeUnit, this.downloadLink.getView().getBytesTotal())));
+        final long bytesTotal = this.downloadLink.getView().getBytesTotal();
+        /* A negative value means the filesize is unknown and must be displayed as "~", not as an absolute byte value. */
+        p.add(new JLabel(bytesTotal < 0 ? "~" : SIZEUNIT.formatValue(maxSizeUnit, bytesTotal)));
         p.add(SwingUtils.toBold(new JLabel(_GUI.T.IfFileExistsDialog_layoutDialogContent_package())), "split 2,sg 1");
         final JTextField textfieldPackagename = new JTextField(packagename);
         textfieldPackagename.setEditable(false);

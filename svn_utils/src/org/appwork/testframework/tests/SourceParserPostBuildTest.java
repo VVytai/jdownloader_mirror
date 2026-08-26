@@ -37,7 +37,9 @@ import static org.appwork.testframework.AWTest.logInfoAnyway;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.appwork.app.launcher.parameterparser.CommandSwitch;
@@ -45,6 +47,7 @@ import org.appwork.app.launcher.parameterparser.ParameterParser;
 import org.appwork.testframework.PostBuildTestInterface;
 import org.appwork.testframework.TestCaseReporter;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.utils.Files;
 import org.appwork.utils.Files.Handler;
 import org.appwork.utils.IO;
@@ -62,6 +65,11 @@ public class SourceParserPostBuildTest implements PostBuildTestInterface {
     @Override
     public boolean isSkipOnUnchangedDependencies() {
         return false;
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return Collections.emptySet();
     }
 
     @Override

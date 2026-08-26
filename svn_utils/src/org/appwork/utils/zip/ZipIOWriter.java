@@ -50,16 +50,21 @@ import java.security.PrivateKey;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 import org.appwork.serializer.Deser;
 import org.appwork.serializer.SC;
+import org.appwork.storage.TypeRef;
+import org.appwork.storage.commonInterface.SerializerException;
 import org.appwork.utils.Exceptions;
 import org.appwork.utils.Hash;
+import org.appwork.utils.IO;
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.crypto.AWSign;
 import org.appwork.utils.encoding.Base64;
@@ -91,6 +96,14 @@ public class ZipIOWriter {
      */
     public static final String I_SIG        = "iSig";
     /**
+     * Archive-comment payload (e.g. revision-package MetaInfo). Signed via {@link #M_SIG}.
+     */
+    public static final String META         = "meta";
+    /**
+     * Signature over archive salt + canonical {@link #META} bytes ({@code SC.STORAGE}).
+     */
+    public static final String M_SIG        = "mSig";
+    /**
      *
      */
     public static final String ORG          = "org";
@@ -115,6 +128,7 @@ public class ZipIOWriter {
     private PrivateKey         privateKey;
     private byte[]             salt;
     private Signature          signature;
+    private Object             archiveMeta;
     protected File             zipFile      = null;
     /**
      *
@@ -431,12 +445,24 @@ public class ZipIOWriter {
                     }
                     con.put(I_SIG, Base64.encodeToString(signature.sign()));
                     con.put(SIG_SALT, Base64.encodeToString(salt));
+                    if (archiveMeta != null) {
+                        final byte[] metaBytes = Deser.get().toByteArray(archiveMeta, SC.STORAGE);
+                        final Object metaNode = Deser.get().fromByteArray(metaBytes, TypeRef.OBJECT, SC.STORAGE);
+                        final byte[] canonicalMeta = Deser.get().toByteArray(metaNode, SC.STORAGE);
+                        con.put(META, metaNode);
+                        signature.initSign(privateKey);
+                        signature.update(salt);
+                        signature.update(canonicalMeta);
+                        con.put(M_SIG, Base64.encodeToString(signature.sign()));
+                    }
                     zipStream.setComment(Deser.get().toString(con, SC.STORAGE));
                 } catch (SignatureException e) {
                     exception = ZipIOException.wrapOrAddSurpressed(exception, e, null);
                 } catch (InvalidKeyException e) {
                     exception = ZipIOException.wrapOrAddSurpressed(exception, e, null);
                 } catch (UnsupportedEncodingException e) {
+                    exception = ZipIOException.wrapOrAddSurpressed(exception, e, null);
+                } catch (SerializerException e) {
                     exception = ZipIOException.wrapOrAddSurpressed(exception, e, null);
                 }
             }
@@ -619,6 +645,78 @@ public class ZipIOWriter {
         privateKey = priv;
         salt = getSalt();
         signature = Signature.getInstance("Sha256WithRSA");
+    }
+
+    /**
+     * Optional payload stored in the archive comment together with {@link #AWZ_SIG1}. Signed via {@link #M_SIG}.
+     */
+    public void setArchiveMeta(Object meta) {
+        this.archiveMeta = meta;
+    }
+
+    public Object getArchiveMeta() {
+        return archiveMeta;
+    }
+
+    /**
+     * Copies all entries from {@code source} into {@code target} and AWZ-signs the result (optional archive meta).
+     * Existing entry comments from {@code source} are not preserved — fresh AWZ signatures are written.
+     */
+    public static File signZipFile(final File source, final File target, final PrivateKey privateKey, final Object archiveMeta) throws ZipIOException, IOException, NoSuchAlgorithmException {
+        if (source == null || !source.isFile()) {
+            throw new ZipIOException("invalid source zip");
+        }
+        if (target == null) {
+            throw new ZipIOException("invalid target zip");
+        }
+        target.delete();
+        if (target.getParentFile() != null) {
+            target.getParentFile().mkdirs();
+        }
+        final ZipFile reader = new ZipFile(source);
+        ZipIOWriter writer = null;
+        boolean ok = false;
+        try {
+            writer = new ZipIOWriter(target, true);
+            writer.setSignaturePrivateKey(privateKey);
+            if (archiveMeta != null) {
+                writer.setArchiveMeta(archiveMeta);
+            }
+            final Enumeration<? extends ZipEntry> entries = reader.entries();
+            while (entries.hasMoreElements()) {
+                final ZipEntry in = entries.nextElement();
+                if (in.isDirectory()) {
+                    writer.addFolder(in.getName());
+                } else {
+                    // add(byte[]) does not auto-create parent folder entries
+                    final String name = in.getName();
+                    final int slash = name.lastIndexOf('/');
+                    if (slash > 0) {
+                        writer.addFolder(name.substring(0, slash));
+                    }
+                    final byte[] data = IO.readStream(-1, reader.getInputStream(in));
+                    writer.add(data, in.getMethod() != ZipEntry.STORED, name);
+                }
+            }
+            writer.close();
+            writer = null;
+            ok = true;
+            return target;
+        } finally {
+            try {
+                reader.close();
+            } catch (IOException e) {
+            }
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (ZipIOException e) {
+                }
+            }
+            if (!ok) {
+                target.delete();
+            }
+        }
     }
 
     protected boolean throwExceptionOnFileGone(File file) {

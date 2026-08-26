@@ -37,6 +37,7 @@ package org.appwork.processes;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.appwork.JNAHelper;
+import org.appwork.loggingv3.LogV3;
 import org.appwork.processes.windows.jna.JNANonWMIWindowsProcessHandler;
 import org.appwork.processes.windows.jna.JNAWindowsProcessHandler;
 import org.appwork.utils.os.CrossSystem;
@@ -50,14 +51,14 @@ public class ProcessHandlerFactory {
     private final static AtomicReference<ProcessHandler> INSTANCE = new AtomicReference<ProcessHandler>();
 
     /**
-     * Creates the default process handler for the current OS. On Windows with JNA: uses
-     * {@link JNANonWMIWindowsProcessHandler} (Toolhelp32, QueryFullProcessImageNameW, Restart Manager) on Windows
-     * Vista and later; on Windows XP and earlier uses {@link JNAWindowsProcessHandler} (WMI) because the non-WMI
-     * APIs (QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION, Restart Manager) require Vista+.
+     * Creates the default process handler for the current OS. On Windows with JNA: uses {@link JNANonWMIWindowsProcessHandler} (Toolhelp32,
+     * QueryFullProcessImageNameW, Restart Manager) on Windows Vista and later; on Windows XP and earlier uses
+     * {@link JNAWindowsProcessHandler} (WMI) because the non-WMI APIs (QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+     * Restart Manager) require Vista+.
      * <p>
-     * The WMI variant (JNAWindowsProcessHandler) uses WMI (Win32_Process), which is available since Windows 2000,
-     * so it is used by the factory on XP and earlier. {@code getLockingProcesses} requires Vista+ (Restart Manager)
-     * and throws NotSupportedException on older Windows in both handlers.
+     * The WMI variant (JNAWindowsProcessHandler) uses WMI (Win32_Process), which is available since Windows 2000, so it is used by the
+     * factory on XP and earlier. {@code getLockingProcesses} requires Vista+ (Restart Manager) and throws NotSupportedException on older
+     * Windows in both handlers.
      * </p>
      *
      * @return process handler instance
@@ -67,8 +68,10 @@ public class ProcessHandlerFactory {
         case WINDOWS:
             if (JNAHelper.isJNAAvailable()) {
                 if (CrossSystem.getOS().isMinimum(CrossSystem.OperatingSystem.WINDOWS_VISTA)) {
+                    LogV3.info("Init ProcessHandlerFactory: JNANonWMIWindowsProcessHandler");
                     return new JNANonWMIWindowsProcessHandler();
                 }
+                LogV3.info("Init ProcessHandlerFactory: JNAWindowsProcessHandler");
                 return new JNAWindowsProcessHandler();
             }
             break;

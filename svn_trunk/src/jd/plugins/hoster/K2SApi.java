@@ -19,6 +19,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.appwork.exceptions.WTFException;
 import org.appwork.storage.JSonMapperException;
 import org.appwork.storage.JSonStorage;
 import org.appwork.storage.TypeRef;
@@ -31,6 +32,7 @@ import org.jdownloader.captcha.blacklist.BlockDownloadCaptchasByHost;
 import org.jdownloader.captcha.blacklist.CaptchaBlackList;
 import org.jdownloader.captcha.v2.Challenge;
 import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperHostPluginRecaptchaV2;
+import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.plugins.components.config.Keep2shareConfig;
 import org.jdownloader.plugins.components.config.Keep2shareConfig.CaptchaTimeoutBehavior;
 import org.jdownloader.plugins.components.config.Keep2shareConfig.LinkcheckMode;
@@ -71,11 +73,12 @@ import jd.plugins.download.DownloadInterface;
  * @author raztoki
  *
  */
-@HostPlugin(revision = "$Revision: 53031 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53214 $", interfaceVersion = 2, names = {}, urls = {})
 public abstract class K2SApi extends PluginForHost {
     private final String        lng                                                    = getLanguage();
     private final String        PROPERTY_ACCOUNT_AUTHTOKEN                             = "auth_token";
     private final String        PROPERTY_ACCOUNT_DOWNLOADLIMIT_REACHED_UNTIL_TIMESTAMP = "downloadlimit_reached_until_timestamp";
+    private final String        PROPERTY_ACCOUNT_QUOTA_RESET_AT_TIMESTAMP              = "quota_reset_at_ts";
     /* Reconnect workaround settings */
     private static final String PROPERTY_FILE_ID                                       = "fileID";
     private final String        PROPERTY_LASTDOWNLOAD                                  = "_lastdownload_timestamp";
@@ -156,11 +159,11 @@ public abstract class K2SApi extends PluginForHost {
         if (account == null) {
             return false;
         }
-        final long link_quota_reset_at_ts = link.getLongProperty(getDirectLinkProperty(account) + "_" + QUOTA_RESET_AT_TIMESTAMP, -1l);
+        final long link_quota_reset_at_ts = link.getLongProperty(getDirectLinkProperty(account) + "_" + PROPERTY_ACCOUNT_QUOTA_RESET_AT_TIMESTAMP, -1l);
         if (link_quota_reset_at_ts == -1) {
             return false;
         }
-        final long account_quota_reset_at_ts = account.getLongProperty(QUOTA_RESET_AT_TIMESTAMP, -1);
+        final long account_quota_reset_at_ts = account.getLongProperty(PROPERTY_ACCOUNT_QUOTA_RESET_AT_TIMESTAMP, -1);
         if (link_quota_reset_at_ts == account_quota_reset_at_ts && System.currentTimeMillis() < account_quota_reset_at_ts) {
             /* download url generation is credited only once per day/account */
             return true;
@@ -264,13 +267,15 @@ public abstract class K2SApi extends PluginForHost {
             switch (account.getType()) {
             case PREMIUM:
             case LIFETIME:
-                if (!isTrafficCredited(link, account)) {
-                    final AccountInfo ai = account.getAccountInfo();
-                    if (ai != null) {
-                        final long trafficLeft = Math.max(0, ai.getTrafficLeft() - link.getVerifiedFileSize());
-                        ai.setTrafficLeft(trafficLeft);
+                synchronized (account) {
+                    if (!isTrafficCredited(link, account)) {
+                        final AccountInfo ai = account.getAccountInfo();
+                        if (ai != null) {
+                            final long trafficLeft = Math.max(0, ai.getTrafficLeft() - link.getVerifiedFileSize());
+                            ai.setTrafficLeft(trafficLeft);
+                        }
+                        link.setProperty(directLinkProperty + "_" + PROPERTY_ACCOUNT_AUTHTOKEN, account.getProperty(PROPERTY_ACCOUNT_AUTHTOKEN, null));
                     }
-                    link.setProperty(directLinkProperty + "_" + QUOTA_RESET_AT_TIMESTAMP, account.getProperty(QUOTA_RESET_AT_TIMESTAMP, null));
                 }
                 break;
             default:
@@ -285,7 +290,7 @@ public abstract class K2SApi extends PluginForHost {
      * @author Jiaz
      */
     protected long getAPIRevision() {
-        return Math.max(0, Formatter.getRevision("$Revision: 53031 $"));
+        return Math.max(0, Formatter.getRevision("$Revision: 53214 $"));
     }
 
     /**
@@ -661,6 +666,7 @@ public abstract class K2SApi extends PluginForHost {
     /*
      * IMPORTANT: Current implementation seems to be correct - admin told us that there are no lifetime accounts (anymore)
      */
+    @Override
     public AccountInfo fetchAccountInfo(final Account account) throws Exception {
         logger.info(getRevisionInfo());
         final AccountInfo ai = new AccountInfo();
@@ -722,9 +728,13 @@ public abstract class K2SApi extends PluginForHost {
                 final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
                 df.setTimeZone(TimeZone.getTimeZone("UTC"));
                 final long quota_reset_at_ts = df.parse(quota_reset_at).getTime();
-                account.setProperty(QUOTA_RESET_AT_TIMESTAMP, quota_reset_at_ts);
+                account.setProperty(PROPERTY_ACCOUNT_QUOTA_RESET_AT_TIMESTAMP, quota_reset_at_ts);
                 final long quota_reset_in = quota_reset_at_ts - System.currentTimeMillis();
                 ai.setStatus(ai.getStatus() + " | Quota reset in: " + TimeFormatter.formatMilliSeconds(quota_reset_in, TimeFormatter.HIDE_SECONDS));
+                if (available_traffic != null && available_traffic.longValue() <= 0) {
+                    /* Zero traffic left -> Wait until quota gets reset */
+                    throw new AccountUnavailableException(_GUI.T.account_error_no_traffic_left(), quota_reset_in);
+                }
             } catch (final ParseException e) {
                 logger.log(e);
             }
@@ -734,8 +744,6 @@ public abstract class K2SApi extends PluginForHost {
         }
         return ai;
     }
-
-    private final String QUOTA_RESET_AT_TIMESTAMP = "quota_reset_at_ts";
 
     /** See https://keep2share.github.io/api/#resources:/accountInfo:post */
     private Map<String, Object> getAccountInfoViaAPI(final Account account, final Browser br, final String auth_token) throws Exception {
@@ -828,8 +836,8 @@ public abstract class K2SApi extends PluginForHost {
                     logger.info("There still seems to be a waittime on the current IP --> ERROR_IP_BLOCKED to prevent unnecessary captcha");
                     final long thisWaitMillis = FREE_RECONNECTWAIT_MILLIS - passedTimeSinceLastDl;
                     ipBlockedOrAccountLimit(link, account, TEXT_DOWNLOADLIMIT_REACHED, thisWaitMillis);
-                    /* This code should never be reached (exception should happen before). */
-                    throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+                    /* Unreachable code */
+                    throw new WTFException();
                 }
             }
             final Map<String, Object> postdata = new HashMap<String, Object>();
@@ -892,8 +900,8 @@ public abstract class K2SApi extends PluginForHost {
                         if (account != null) {
                             account.setProperty(PROPERTY_ACCOUNT_DOWNLOADLIMIT_REACHED_UNTIL_TIMESTAMP, System.currentTimeMillis() + waitMillis);
                         }
-                        /* This code should never be reached (exception should happen before). */
-                        throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+                        /* Unreachable code */
+                        throw new WTFException();
                     }
                     sleep(waitMillis, link);
                     postdata.put("free_download_key", free_download_key);
@@ -961,9 +969,17 @@ public abstract class K2SApi extends PluginForHost {
     }
 
     /** Checks for cached free account limits. */
+    @Deprecated
     private void checkForFreeAccountLimits(final Account account) throws PluginException {
         if (this.isPremium(account)) {
             /* Not a free account -> No free account limits to check for. */
+            return;
+        }
+        if (true) {
+            /*
+             * 2026-08-25: Looks like this is not needed anymore since free accounts simply have a daily quota of by the time of writing
+             * 10GB and once that is zero or minus, the account check system should automatically display the account as out of traffic.
+             */
             return;
         }
         /* Check for limit sitting on account */
@@ -971,17 +987,26 @@ public abstract class K2SApi extends PluginForHost {
         final long timeUntilLimitTimestampPasses = account.getLongProperty(PROPERTY_ACCOUNT_DOWNLOADLIMIT_REACHED_UNTIL_TIMESTAMP, 0) - System.currentTimeMillis();
         if (timeUntilLimitTimestampPasses > 0) {
             ipBlockedOrAccountLimit(null, account, TEXT_DOWNLOADLIMIT_REACHED, timeUntilLimitTimestampPasses);
-            /* This code should never be reached (exception should happen before). */
-            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+            /* Unreachable code */
+            throw new WTFException();
         }
         /* Check for default limit time to have passed. */
         final long lastdownloadFreeAccountTimestampMillis = account.getLongProperty(PROPERTY_LASTDOWNLOAD, 0);
         final long passedTimeMillisSinceLastFreeAccountDownload = System.currentTimeMillis() - lastdownloadFreeAccountTimestampMillis;
         if (passedTimeMillisSinceLastFreeAccountDownload < FREE_RECONNECTWAIT_MILLIS) {
-            logger.info("There still seems to be a waittime on the current account");
-            ipBlockedOrAccountLimit(null, account, TEXT_DOWNLOADLIMIT_REACHED, FREE_RECONNECTWAIT_MILLIS - passedTimeMillisSinceLastFreeAccountDownload);
-            /* This code should never be reached (exception should happen before). */
-            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+            /* Determine the wait time: prefer the exact quota reset time reported by the API if it is available. */
+            final long timeUntilQuotaResetPasses = account.getLongProperty(PROPERTY_ACCOUNT_QUOTA_RESET_AT_TIMESTAMP, 0) - System.currentTimeMillis();
+            final long waitMillis;
+            if (timeUntilQuotaResetPasses > 0) {
+                logger.info("There still seems to be a waittime on the current account -> Using wait time from account property");
+                waitMillis = timeUntilQuotaResetPasses;
+            } else {
+                logger.info("There still seems to be a waittime on the current account -> Using hardcoded assumed wait time");
+                waitMillis = FREE_RECONNECTWAIT_MILLIS - passedTimeMillisSinceLastFreeAccountDownload;
+            }
+            ipBlockedOrAccountLimit(null, account, TEXT_DOWNLOADLIMIT_REACHED, waitMillis);
+            /* Unreachable code */
+            throw new WTFException();
         }
     }
 
@@ -1293,7 +1318,13 @@ public abstract class K2SApi extends PluginForHost {
                     logger.info("Validated existing auth_token");
                     return storedAuthToken;
                 } catch (final Exception ignore) {
-                    this.dumpAuthToken(account);
+                    /**
+                     * Dump auth token if handleErrorsAPI hasn't already done that. <br>
+                     * Checking for existence of it before avoids log spam from dumpAuthToken.
+                     */
+                    if (account.hasProperty(PROPERTY_ACCOUNT_AUTHTOKEN)) {
+                        this.dumpAuthToken(account);
+                    }
                     logger.info("Failed to validate existing auth_token -> Full login required");
                 }
             }
@@ -1309,10 +1340,9 @@ public abstract class K2SApi extends PluginForHost {
                 /* This should never happen */
                 account.removeProperty(PROPERTY_ACCOUNT_AUTHTOKEN);
                 throw new AccountInvalidException("Fatal: Token missing");
-            } else {
-                logger.info("new auth_token: " + freshAuthToken);
-                account.setProperty(PROPERTY_ACCOUNT_AUTHTOKEN, freshAuthToken);
             }
+            logger.info("new auth_token: " + freshAuthToken);
+            account.setProperty(PROPERTY_ACCOUNT_AUTHTOKEN, freshAuthToken);
             return freshAuthToken;
         }
     }
@@ -1820,24 +1850,26 @@ public abstract class K2SApi extends PluginForHost {
         throw new PluginException(LinkStatus.ERROR_FATAL, msg);
     }
 
-    private void dumpAuthToken(final Account account) throws PluginException {
+    private boolean dumpAuthToken(final Account account) throws PluginException {
         if (account == null) {
             /* Developer mistake */
-            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+            throw new IllegalArgumentException();
         }
         synchronized (account) {
             final String currentToken = account.getStringProperty(PROPERTY_ACCOUNT_AUTHTOKEN);
             if (currentToken != null) {
                 logger.info("dumpAuthToken:" + currentToken);
                 account.removeProperty(PROPERTY_ACCOUNT_AUTHTOKEN);
+                return true;
             } else {
                 logger.warning("No token there to be dumped");
+                return false;
             }
         }
     }
 
     protected void handleGeneralServerErrors(final Browser br, final DownloadInterface dl, final Account account, final DownloadLink link) throws PluginException {
-        if (br.containsHTML("(?i)You exceeded your Premium \\d+ GB daily limit, try to download tomorrow")) {
+        if (br.containsHTML("You exceeded your Premium \\d+ GB daily limit, try to download tomorrow")) {
             if (account != null) {
                 throw new AccountUnavailableException("You exceeded your Premium daily limit, try to download tomorrow", 60 * 60 * 1000l);
             } else {
@@ -1874,7 +1906,7 @@ public abstract class K2SApi extends PluginForHost {
             // Www-Authenticate: Swift realm="AUTH_system"
             setStoredDirecturl(link, account, null);
             throw new PluginException(LinkStatus.ERROR_RETRY);
-        } else if (dl.getConnection().getResponseCode() == 404 || br.containsHTML("(?i)>\\s*Not Found<")) {
+        } else if (dl.getConnection().getResponseCode() == 404 || br.containsHTML(">\\s*Not Found<")) {
             throw new PluginException(LinkStatus.ERROR_TEMPORARILY_UNAVAILABLE, "Server error 404", 30 * 60 * 1000l);
         } else if (dl.getConnection().getResponseCode() == 503) {
             throw new PluginException(LinkStatus.ERROR_TEMPORARILY_UNAVAILABLE, "Server error 503", 5 * 60 * 1000l);

@@ -55,7 +55,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.CumSt;
 
-@DecrypterPlugin(revision = "$Revision: 53176 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53235 $", interfaceVersion = 3, names = {}, urls = {})
 public class CumStCrawler extends PluginForDecrypt {
     public CumStCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -112,7 +112,7 @@ public class CumStCrawler extends PluginForDecrypt {
     /* service = any platform key without slash (e.g. onlyfans, fansly); creator- and post-ids are numeric, dm-ids are uuids. */
     private static final Pattern PATTERN_POST      = Pattern.compile("/creators/([^/]+)/(\\d+)/post/(\\d+)(?:\\?[^#]*)?", Pattern.CASE_INSENSITIVE);
     private static final Pattern PATTERN_DM        = Pattern.compile("/creators/([^/]+)/(\\d+)/dm/([\\w\\-]+)(?:\\?[^#]*)?", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/(\\d+)([a-f0-9-]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-f0-9\\-]+)", Pattern.CASE_INSENSITIVE);
     /* API- and website path segment for the two supported content types. */
     private static final String  CONTENT_TYPE_POST = "post";
     private static final String  CONTENT_TYPE_DM   = "dm";

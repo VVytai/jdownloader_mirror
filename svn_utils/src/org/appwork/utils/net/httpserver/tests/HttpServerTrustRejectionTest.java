@@ -33,11 +33,14 @@
  * ==================================================================================================================================================== */
 package org.appwork.utils.net.httpserver.tests;
 
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.appwork.loggingv3.LogV3;
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.testframework.executer.ProcessOptions;
@@ -82,6 +85,11 @@ public class HttpServerTrustRejectionTest extends AWTest {
             LogV3.info("" + httpClient.get("http://127.0.0.1:" + port + "/"));
             return true;
         }
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

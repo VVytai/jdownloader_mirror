@@ -119,13 +119,12 @@ public abstract class AbstractMergeSameNamedPackagesAction<PackageType extends A
             @Override
             protected Void run() throws RuntimeException {
                 final PackageSettings settings = new PackageSettings();
-                settings.setMergeSameNamedPackages(true);
                 settings.setMergeSameNamedPackagesCaseInsensitive(getMatchPackageNamesCaseInsensitive().isEnabled());
                 /* If user has selected package(s), only collect duplicates within selection. */
                 final List<PackageView<PackageType, ChildrenType>> selPackageViews = sel.getPackageViews();
                 if (isMergeAll() || selPackageViews == null || selPackageViews.size() == 0) {
                     /* Merge duplicates in whole list */
-                    controller.merge(null, null, null, settings);
+                    controller.consolidateSameNamedPackages(null, settings);
                 } else {
                     /* Merge duplicates within users' selection */
                     final List<PackageType> selectedPackages = new ArrayList<PackageType>();
@@ -137,7 +136,7 @@ public abstract class AbstractMergeSameNamedPackagesAction<PackageType extends A
                         /* User has only selected items we can't work with -> Do nothing */
                         return null;
                     }
-                    controller.merge(null, null, selectedPackages, settings);
+                    controller.consolidateSameNamedPackages(selectedPackages, settings);
                 }
                 return null;
             }

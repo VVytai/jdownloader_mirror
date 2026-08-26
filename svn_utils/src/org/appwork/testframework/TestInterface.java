@@ -33,6 +33,8 @@
  * ==================================================================================================================================================== */
 package org.appwork.testframework;
 
+import java.util.Set;
+
 /**
  * @author thomas
  * @date 17.12.2021
@@ -52,6 +54,14 @@ public interface TestInterface {
      * @return true to allow skip on unchanged deps, false to always run
      */
     boolean isSkipOnUnchangedDependencies();
+
+    /**
+     * Optional tags (e.g. {@link TestTag#UAC}, {@link TestTag#INTERACTIVE}). Default empty. Runners schedule tagged tests that need user
+     * attention first.
+     *
+     * @return non-null set; callers must not modify it
+     */
+    Set<TestTag> getTags();
 
     /**
      * @return

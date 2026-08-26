@@ -219,7 +219,6 @@ public class ExtMergedIcon implements Icon, IDIcon {
 
     @Override
     public void paintIcon(final Component c, final Graphics g, final int x, final int y) {
-        final Graphics2D g2 = (Graphics2D) g;
         // TODO:
         // fix cache to support proper highDPI caching.
         // MONITOR_SCALING disables caching if a scaled monitor is available
@@ -229,22 +228,33 @@ public class ExtMergedIcon implements Icon, IDIcon {
         // g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         // g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         if (this.internalIcon != null) {
-            g2.drawImage(this.internalIcon.getImage(), x, y, null);
+            final Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.drawImage(this.internalIcon.getImage(), x, y, null);
+            } finally {
+                g2.dispose();
+            }
             // internalIcon.paintIcon(c, g2, x, y);
             return;
-        }
-        final Shape oldClip = g2.getClip();
-        // Rectangle rec = new Rectangle( );
-        g2.setClip(x, y, this.getIconWidth(), this.getIconHeight());
-        Shape defClip = g2.getClip();
-        for (final Entry e : this.entries) {
-            if (e.clip != null) {
-                g2.setClip(e.clip);
+        } else {
+            final Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.clipRect(x, y, this.getIconWidth(), this.getIconHeight());
+                for (final Entry e : this.entries) {
+                    final Graphics2D g3 = (Graphics2D) g2.create();
+                    try {
+                        if (e.clip != null) {
+                            g3.clip(e.clip);
+                        }
+                        paintSingleIcon(c, x, y, g3, e);
+                    } finally {
+                        g3.dispose();
+                    }
+                }
+            } finally {
+                g2.dispose();
             }
-            paintSingleIcon(c, x, y, g2, e);
-            g2.setClip(defClip);
         }
-        g2.setClip(oldClip);
     }
 
     protected void paintSingleIcon(final Component c, final int x, final int y, final Graphics2D g2, final Entry e) {

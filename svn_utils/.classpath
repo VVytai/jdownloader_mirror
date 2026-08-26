@@ -3,7 +3,6 @@
 	<classpathentry excluding="org/appwork/utils/net/httpconnection/trust/ccadb/temp/" kind="src" path="src"/>
 	<classpathentry kind="src" path="themes"/>
 	<classpathentry kind="lib" path="libs/miglayout.jar"/>
-	<classpathentry kind="lib" path="libs/svgSalamander.jar"/>
 	<classpathentry kind="lib" path="dev_libs/jna.jar" sourcepath="dev_libs/jna-sources.jar"/>
 	<classpathentry kind="lib" path="dev_libs/jna-platform.jar" sourcepath="dev_libs/jna-platform-sources.jar"/>
 	<classpathentry kind="lib" path="libs/miglayout-core.jar"/>

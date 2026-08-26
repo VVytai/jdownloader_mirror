@@ -16,39 +16,79 @@
 package jd.plugins.decrypter;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
-import org.appwork.utils.parser.UrlQuery;
-import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperCrawlerPluginRecaptchaV2;
+import org.appwork.storage.TypeRef;
+import org.appwork.utils.StringUtils;
 import org.jdownloader.plugins.components.antiDDoSForDecrypt;
+import org.jdownloader.scripting.JavaScriptEngineFactory;
 
 import jd.PluginWrapper;
 import jd.controlling.AccountController;
 import jd.controlling.ProgressController;
-import jd.http.Cookies;
 import jd.nutils.encoding.Encoding;
 import jd.parser.Regex;
-import jd.parser.html.Form;
 import jd.plugins.Account;
 import jd.plugins.AccountRequiredException;
 import jd.plugins.CryptedLink;
 import jd.plugins.DecrypterPlugin;
 import jd.plugins.DownloadLink;
 import jd.plugins.FilePackage;
+import jd.plugins.LinkStatus;
+import jd.plugins.PluginDependencies;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
+import jd.plugins.hoster.LiveMixTapesCom;
 import jd.utils.JDUtilities;
 
-@DecrypterPlugin(revision = "$Revision: 48359 $", interfaceVersion = 2, names = { "livemixtapes.com" }, urls = { "https?://(?:www\\.)?livemixtap\\.es/[a-z0-9]+|https?://(\\w+\\.)?livemixtapes\\.com/((download(/mp3)?|mixtapes)/\\d+/[a-z0-9\\-]+\\.html|player\\.php\\?album_id=\\d+.*?)" })
+@DecrypterPlugin(revision = "$Revision: 53220 $", interfaceVersion = 2, names = {}, urls = {})
+@PluginDependencies(dependencies = { LiveMixTapesCom.class })
 public class LiveMixtapesComDecrypter extends antiDDoSForDecrypt {
     public LiveMixtapesComDecrypter(PluginWrapper wrapper) {
         super(wrapper);
     }
 
-    private static final String REDIRECTLINK           = "https?://(?:www\\.)?livemixtap\\.es/[a-z0-9]+";
-    private static final String MUSTBELOGGEDIN         = ">You must be logged in to access this page";
-    private static final String ONLYREGISTEREDUSERTEXT = "Download is only available for registered users";
-    private static final Object LOCK                   = new Object();
-    public static final String  TYPE_DOWNLOAD          = "https?://(?:\\w+\\.)?livemixtapes\\.com/download/.+";
+    /** Estimated audio bitrates in kbit/s, used to approximate track file sizes from their duration. */
+    private static final int    BITRATE_FREE_KBITS    = 96;
+    private static final int    BITRATE_ACCOUNT_KBITS = 256;
+    private static final String REDIRECTLINK          = "https?://(?:www\\.)?livemixtap\\.es/[a-z0-9]+";
+
+    public static List<String[]> getPluginDomains() {
+        final List<String[]> ret = new ArrayList<String[]>();
+        ret.add(new String[] { "livemixtapes.com" });
+        ret.add(new String[] { "livemixtap.es" });
+        return ret;
+    }
+
+    public static String[] getAnnotationNames() {
+        return buildAnnotationNames(getPluginDomains());
+    }
+
+    @Override
+    public String[] siteSupportedNames() {
+        return buildSupportedNames(getPluginDomains());
+    }
+
+    public static String[] getAnnotationUrls() {
+        return buildAnnotationUrls(getPluginDomains());
+    }
+
+    private static final Pattern PATTERN_MIXTAPE = Pattern.compile("/mixtape/([a-z0-9\\-]+)");
+
+    public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
+        final List<String> ret = new ArrayList<String>();
+        for (final String[] domains : pluginDomains) {
+            if (domains[0].equals("livemixtap.es")) {
+                /* Short redirect-URLs */
+                ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/[a-z0-9]+");
+            } else {
+                ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + PATTERN_MIXTAPE.pattern());
+            }
+        }
+        return ret.toArray(new String[0]);
+    }
 
     @Override
     public int getMaxConcurrentProcessingInstances() {
@@ -56,155 +96,126 @@ public class LiveMixtapesComDecrypter extends antiDDoSForDecrypt {
         return 1;
     }
 
+    @SuppressWarnings("unchecked")
     public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
-        ArrayList<DownloadLink> decryptedLinks = new ArrayList<DownloadLink>();
-        String parameter = param.toString();
-        if (parameter.matches(TYPE_DOWNLOAD)) {
-            /* --> Host plugin */
-            decryptedLinks.add(this.createDownloadlink(parameter));
-            return decryptedLinks;
-        }
-        /* 2020-04-22: Convert embed URLs --> Normal URLs */
-        final UrlQuery query = UrlQuery.parse(parameter);
-        String album_id = query.get("album_id");
-        if (album_id == null) {
-            album_id = new Regex(parameter, "/mixtapes/(\\d+)").getMatch(0);
-        } else {
-            parameter = String.format("https://www.%s/mixtapes/%s/.html", this.getHost(), album_id);
-        }
-        br.getHeaders().put("Accept-Encoding", "gzip,deflate");
-        synchronized (LOCK) {
-            /* 2020-04-22: Save- and restore cookies to avoid captchas */
-            try {
-                final Object cookiesO = this.getPluginConfig().getProperty("cookies");
-                final Cookies cookies = (Cookies) cookiesO;
-                br.setCookies(this.getHost(), cookies);
-            } catch (final Throwable e) {
-            }
-            /** If link is a short link correct it */
-            if (parameter.matches(REDIRECTLINK)) {
-                /* TODO: Check if a captcha can happen here as well. */
-                br.setFollowRedirects(false);
-                getPage(parameter);
-                String redirect = br.getRedirectLocation();
-                if (redirect == null) {
-                    logger.warning("Decrypter broken for link: " + parameter);
-                    return null;
-                }
-                getPage(redirect);
-                redirect = br.getRedirectLocation();
-                if (redirect == null) {
-                    logger.warning("Decrypter broken for link: " + parameter);
-                    return null;
-                } else if (redirect.matches(TYPE_DOWNLOAD)) {
-                    logger.warning("WTF final downloadurl might be the same as the one which was initially added: " + parameter);
-                    return null;
-                }
-                decryptedLinks.add(this.createDownloadlink(redirect));
-                /* Redirect will most likely go back into this crawler. */
-                return decryptedLinks;
-            }
-            if (album_id == null) {
-                /* This should never happen */
-                logger.warning("album_id is null");
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        final String contenturl = param.getCryptedUrl();
+        /** If link is a short link, correct it */
+        if (contenturl.matches(REDIRECTLINK)) {
+            br.setFollowRedirects(false);
+            getPage(contenturl);
+            String redirect = br.getRedirectLocation();
+            if (redirect == null) {
+                logger.warning("Decrypter broken for link: " + contenturl);
                 return null;
             }
-            getUserLogin();
-            br.setFollowRedirects(true);
-            getPage(parameter);
-            if (CaptchaHelperCrawlerPluginRecaptchaV2.containsRecaptchaV2Class(br)) {
-                final Form captchaform = br.getForm(0);
-                if (captchaform == null) {
-                    logger.warning("Failed to find captchaform");
-                    return null;
-                }
-                captchaform.put("g-recaptcha-response", Encoding.urlEncode(new CaptchaHelperCrawlerPluginRecaptchaV2(this, br).getToken()));
-                submitForm(captchaform);
+            getPage(redirect);
+            redirect = br.getRedirectLocation();
+            if (redirect == null) {
+                logger.warning("Decrypter broken for link: " + contenturl);
+                return null;
             }
-            this.getPluginConfig().setProperty("cookies", br.getCookies(br.getHost()));
+            ret.add(this.createDownloadlink(redirect));
+            /* Redirect will most likely go back into this crawler. */
+            return ret;
         }
+        final String slug = new Regex(contenturl, PATTERN_MIXTAPE).getMatch(0);
+        if (slug == null) {
+            /* This should never happen */
+            logger.warning("Failed to find slug");
+            return null;
+        }
+        final boolean accountAvailable = getUserLogin();
+        /* File size estimation and file extension depend on account availability. */
+        final int bitrate = accountAvailable ? BITRATE_ACCOUNT_KBITS : BITRATE_FREE_KBITS;
+        final String extension = accountAvailable ? ".mp3" : ".mp4";
+        br.setFollowRedirects(true);
+        getPage(contenturl);
         if (br.getURL().contains("error/login.html")) {
             throw new AccountRequiredException();
         }
-        /* Check for (external) embedded video(s) e.g. instagram */
-        if (br.containsHTML("function videoEmbed")) {
-            final String finallink = br.getRegex("videoEmbed\\(\\'(https?://[^<>\"]*?)\\'").getMatch(0);
-            if (finallink != null) {
-                logger.info("Found embedded content");
-                decryptedLinks.add(createDownloadlink(finallink));
-            }
+        final String buildID = br.getRegex("\"buildId\"\\s*:\\s*\"([^\"]+)\"").getMatch(0);
+        if (buildID == null) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
-        String fpName = br.getRegex("property=\"og:title\" content=\"([^<>\"]+)").getMatch(0);
-        if (fpName == null) {
-            /* Fallback attempt */
-            fpName = new Regex(br.getURL(), "mixtapes/\\d+/(.*?)\\.html$").getMatch(0);
-            if (fpName != null) {
-                fpName = fpName.replace("-", " ");
-            }
+        getPage("https://" + this.getHost() + "/_next/data/" + buildID + "/mixtape/" + slug + ".json?slug=" + Encoding.urlEncode(slug));
+        final String json = br.getRequest().getHtmlCode();
+        /* Robustly grab the mixtape-ID so the .zip download can be added even if the detailed json handling fails below. */
+        final String mixtapeID = new Regex(json, "\"id\"\\s*:\\s*(\\d+)").getMatch(0);
+        if (mixtapeID == null) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
-        if (fpName == null) {
-            /* Final fallback */
-            fpName = album_id;
-        }
-        fpName = Encoding.htmlDecode(fpName).trim();
-        FilePackage fpStream = FilePackage.getInstance();
-        fpStream.setName(fpName + " - stream");
-        FilePackage fpDownload = FilePackage.getInstance();
-        fpDownload.setName(fpName + " - download");
-        /* 2020-04-22: New */
-        /* TODO: Maybe switch to "API" for future bugfixes e.g. https://www.livemixtapes.com/playlist.json.php?playlist_id=123456 */
-        final String[] trackInfo = br.getRegex("<li class=\"[^\"]*?track-streamable[^\"]*?\"(.*?)showPlaylistPopup").getColumn(0);
-        final String[] songIDs = br.getRegex("onclick=\"showPlaylistPopup\\((\\d+)\\)\"").getColumn(0);
-        final boolean hasAdditionalInfo = trackInfo.length == songIDs.length;
-        for (int i = 0; i < songIDs.length; i++) {
-            final String songID = songIDs[i];
-            String officialDownloadURL = null;
-            final DownloadLink dl = this.createDownloadlink(String.format("https://club.livemixtapes.com/play/%s", songID));
-            String filename = null;
-            if (hasAdditionalInfo) {
-                final String src = trackInfo[i];
-                final String tracknum = new Regex(src, "class=\"track-num\">\\s*?(\\d+)").getMatch(0);
-                String trackname = new Regex(src, "<h3[^>]*?>(.*?)(\\s+\\(\\d+:\\d{1,2}\\s*\\)\\s*)?<").getMatch(0);
-                if (tracknum != null && trackname != null) {
-                    trackname = Encoding.htmlDecode(trackname);
-                    trackname = trackname.trim();
-                    filename = tracknum + ". " + trackname;
-                }
-                officialDownloadURL = new Regex(src, "(/download/mp3/" + songID + "/[a-z0-9\\-]+\\.html)").getMatch(0);
+        final FilePackage fp = FilePackage.getInstance();
+        fp.setName(slug.replace("-", " ").trim());
+        /* Add .zip with complete album download (host plugin). This is always added, regardless of the json handling below. */
+        final DownloadLink zip = this.createDownloadlink("https://www." + this.getHost() + "/download/" + mixtapeID + "/" + slug + ".html");
+        zip.setName(slug.replace("-", " ").trim() + ".zip");
+        zip.setAvailable(true);
+        zip._setFilePackage(fp);
+        ret.add(zip);
+        /* The detailed json handling is wrapped in try-catch so that a broken/changed structure never prevents adding the .zip above. */
+        try {
+            final Map<String, Object> root = restoreFromString(json, TypeRef.MAP);
+            final Map<String, Object> data = (Map<String, Object>) JavaScriptEngineFactory.walkJson(root, "pageProps/initialMixtape/data");
+            final String artist = (String) data.get("artist");
+            final String title = (String) data.get("title");
+            if (!StringUtils.isEmpty(artist) && !StringUtils.isEmpty(title)) {
+                final String mixtapeName = artist + " - " + title;
+                fp.setName(mixtapeName);
+                zip.setName(mixtapeName + ".zip");
             }
-            if (filename != null) {
-                if (!filename.endsWith(".mp3")) {
-                    filename += ".mp3";
-                }
-                dl.setFinalFileName(filename);
-            } else {
-                dl.setName(songID + ".mp3");
+            final String description = (String) data.get("description");
+            if (!StringUtils.isEmpty(description)) {
+                fp.setComment(description);
             }
-            dl.setAvailable(true);
-            dl._setFilePackage(fpStream);
-            decryptedLinks.add(dl);
-            if (officialDownloadURL != null) {
-                officialDownloadURL = "https://www." + this.getHost() + officialDownloadURL;
-                final DownloadLink dlDownload = this.createDownloadlink(officialDownloadURL);
-                if (filename != null) {
-                    dlDownload.setFinalFileName(filename);
+            /* Only the "tracks" are processed here - "videos" elements are intentionally ignored. */
+            final List<Map<String, Object>> tracks = (List<Map<String, Object>>) JavaScriptEngineFactory.walkJson(root, "pageProps/initialMixtape/included/tracks");
+            long totalSize = 0;
+            int position = 1;
+            for (final Map<String, Object> track : tracks) {
+                final Number trackID = (Number) track.get("id");
+                final String trackArtist = (String) track.get("artist");
+                final String trackTitle = (String) track.get("title");
+                final Number duration = (Number) track.get("duration");
+                /* Approximate file size in bytes based on the given duration and the estimated bitrate. */
+                final long filesize;
+                if (duration != null) {
+                    filesize = duration.longValue() * bitrate * 1000 / 8;
+                    /* The .zip always contains the original mp3s, so always account for the account/original bitrate there. */
+                    totalSize += duration.longValue() * BITRATE_ACCOUNT_KBITS * 1000 / 8;
                 } else {
-                    dlDownload.setName(songID + ".mp3");
+                    filesize = 0;
                 }
-                dlDownload.setAvailable(true);
-                dlDownload._setFilePackage(fpDownload);
-                decryptedLinks.add(dlDownload);
+                final DownloadLink link = this.createDownloadlink("https://club.livemixtapes.com/play/" + trackID.longValue());
+                final StringBuilder filename = new StringBuilder();
+                filename.append(String.format("%02d. ", position));
+                if (!StringUtils.isEmpty(trackArtist)) {
+                    filename.append(trackArtist).append(" - ");
+                }
+                if (!StringUtils.isEmpty(trackTitle)) {
+                    filename.append(trackTitle);
+                } else {
+                    filename.append(trackID.longValue());
+                }
+                filename.append(extension);
+                link.setFinalFileName(filename.toString());
+                if (filesize > 0) {
+                    link.setDownloadSize(filesize);
+                }
+                link.setAvailable(true);
+                link._setFilePackage(fp);
+                ret.add(link);
+                position++;
             }
+            /* Set the sum of all track file sizes on the .zip download. */
+            if (totalSize > 0) {
+                zip.setDownloadSize(totalSize);
+            }
+        } catch (final Exception e) {
+            logger.log(e);
+            logger.warning("Single track handling failed");
         }
-        /* Add .zip with complete album download */
-        String officialAlbumDownloadLink = br.getRegex("(/download/" + album_id + "/[a-z0-9\\-]+\\.html)").getMatch(0);
-        if (officialAlbumDownloadLink != null) {
-            final DownloadLink album = this.createDownloadlink("https://www." + this.getHost() + officialAlbumDownloadLink);
-            album.setName(fpName + ".zip");
-            album.setAvailable(true);
-            decryptedLinks.add(album);
-        }
-        return decryptedLinks;
+        return ret;
     }
 
     /**
@@ -223,7 +234,7 @@ public class LiveMixtapesComDecrypter extends antiDDoSForDecrypt {
         }
         hostPlugin.setBrowser(this.br);
         try {
-            ((jd.plugins.hoster.LiveMixTapesCom) hostPlugin).login(aa);
+            ((LiveMixTapesCom) hostPlugin).login(aa, false);
         } catch (final PluginException e) {
             aa.setValid(false);
             return false;

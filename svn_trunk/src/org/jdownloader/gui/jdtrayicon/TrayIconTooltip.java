@@ -18,20 +18,21 @@ package org.jdownloader.gui.jdtrayicon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
-import jd.controlling.downloadcontroller.DownloadWatchDog;
-import jd.gui.swing.components.JWindowTooltip;
-import jd.gui.swing.jdgui.components.JDProgressBar;
-import jd.plugins.DownloadLink;
-import jd.plugins.FilePackage;
-import net.miginfocom.swing.MigLayout;
-
 import org.appwork.utils.swing.EDTRunner;
 import org.jdownloader.controlling.AggregatedNumbers;
 import org.jdownloader.gui.jdtrayicon.translate._TRAY;
 import org.jdownloader.gui.views.SelectionInfo;
 import org.jdownloader.gui.views.downloads.table.DownloadsTableModel;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SPEEDUNIT;
 import org.jdownloader.settings.staticreferences.CFG_GUI;
+
+import jd.controlling.downloadcontroller.DownloadWatchDog;
+import jd.gui.swing.components.JWindowTooltip;
+import jd.gui.swing.jdgui.components.JDProgressBar;
+import jd.plugins.DownloadLink;
+import jd.plugins.FilePackage;
+import net.miginfocom.swing.MigLayout;
 
 public class TrayIconTooltip extends JWindowTooltip {
     private static final long serialVersionUID = -400023413449818691L;
@@ -63,26 +64,29 @@ public class TrayIconTooltip extends JWindowTooltip {
     protected void updateContent() {
         final Thread thread = Thread.currentThread();
         final SelectionInfo<FilePackage, DownloadLink> selection = DownloadsTableModel.getInstance().getTable().getSelectionInfo(false, false);
-        if (selection != null) {
-            final AggregatedNumbers dla = new AggregatedNumbers(selection);
-            new EDTRunner() {
-                @Override
-                protected void runInEDT() {
-                    if (isVisible()) {
-                        long totalDl = dla.getTotalBytes();
-                        long curDl = dla.getLoadedBytes();
-                        lblDlRunning.setText(String.valueOf(DownloadWatchDog.getInstance().getRunningDownloadLinks().size()));
-                        final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
-                        lblSpeed.setText(SIZEUNIT.formatValue(maxSizeUnit, DownloadWatchDog.getInstance().getDownloadSpeedManager().getSpeed()) + "/s");
-                        lblProgress.setText(SIZEUNIT.formatValue(maxSizeUnit, curDl) + " / " + SIZEUNIT.formatValue(maxSizeUnit, totalDl));
-                        prgTotal.setMaximum(totalDl);
-                        prgTotal.setValue(curDl);
-                        lblETA.setText(dla.getEtaString());
-                    } else {
-                        updater.compareAndSet(thread, null);
-                    }
-                }
-            }.waitForEDT();
+        if (selection == null) {
+            return;
         }
+        final AggregatedNumbers dla = new AggregatedNumbers(selection);
+        new EDTRunner() {
+            @Override
+            protected void runInEDT() {
+                if (!isVisible()) {
+                    updater.compareAndSet(thread, null);
+                    return;
+                }
+                final long totalDl = dla.getTotalBytes();
+                final long curDl = dla.getLoadedBytes();
+                lblDlRunning.setText(String.valueOf(DownloadWatchDog.getInstance().getRunningDownloadLinks().size()));
+                final SPEEDUNIT maxSpeedUnit = CFG_GUI.CFG.getMaxSpeedUnit();
+                lblSpeed.setText(SPEEDUNIT.formatValue(maxSpeedUnit, DownloadWatchDog.getInstance().getDownloadSpeedManager().getSpeed()) + "/s");
+                /* Negative values mean "unknown" and must be displayed as "~", not as an absolute byte value. */
+                final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
+                lblProgress.setText((curDl < 0 ? "~" : SIZEUNIT.formatValue(maxSizeUnit, curDl)) + " / " + (totalDl < 0 ? "~" : SIZEUNIT.formatValue(maxSizeUnit, totalDl)));
+                prgTotal.setMaximum(totalDl);
+                prgTotal.setValue(curDl);
+                lblETA.setText(dla.getEtaString());
+            }
+        }.waitForEDT();
     }
 }

@@ -55,7 +55,7 @@ import org.appwork.storage.flexijson.FlexiJSonValue;
 import org.appwork.storage.flexijson.InvalidPathException;
 import org.appwork.storage.flexijson.JSPath;
 import org.appwork.storage.validator.classvalidator.StorableAbstractValidator;
-import org.appwork.storage.validator.classvalidator.StorableClassValidator1;
+import org.appwork.storage.validator.classvalidator.StorableClassValidator;
 import org.appwork.utils.reflection.CompiledType;
 import org.appwork.utils.reflection.JavaSyntax;
 
@@ -194,7 +194,7 @@ public class JsonModification<TargetType, MatcherType> implements Storable {
 
     private Set<String> unset;
 
-    @StorableClassValidator1(cls = UnsetValidator.class)
+    @StorableClassValidator(cls = UnsetValidator.class)
     public Set<String> getUnset() {
         return unset;
     }

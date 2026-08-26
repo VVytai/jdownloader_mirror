@@ -43,8 +43,6 @@ import org.appwork.testhelper.AWTestValidateClassReference;
  */
 public class DeserConstants {
     public static final String    AWU_SERIALIZER_CLASS = "AWU_SERIALIZER_CLASS";
-    public static final String    DESER_SIMPLE         = "Deser-Simple";
-    public static final String    DESER_FLEXI          = "Deser-Flexi";
     @AWTestValidateClassReference
     protected static final String CLASS_SIMPLE         = "org.appwork.storage.SimpleSerializer";
     @AWTestValidateClassReference

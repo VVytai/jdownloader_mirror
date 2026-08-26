@@ -212,7 +212,7 @@ public class SimpleSerializer extends AbstractSerializer implements SerializerIn
         try {
             o = toObject(o, context);
             final boolean ensureNewInstances = contextContainsAll(context, SC.ENSURE_NEW_INSTANCES);
-            if (!ensureNewInstances && Clazz.isInstanceof(o.getClass(), ReflectionUtils.getRaw(type.getType()))) {
+            if (!ensureNewInstances && (o != null && Clazz.isInstanceof(o.getClass(), ReflectionUtils.getRaw(type.getType())))) {
                 return (T) o;
             } else {
                 return getMapper(context).convert(o, type);

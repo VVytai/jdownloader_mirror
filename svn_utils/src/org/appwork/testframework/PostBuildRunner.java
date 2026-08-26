@@ -56,8 +56,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeSet;
-
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.exceptions.WTFException;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.loggingv3.simple.LogRecord2;
@@ -119,6 +117,10 @@ public class PostBuildRunner {
     /**
      *
      */
+    private static final String           WORKSPACE_MARKER                           = "-workspace=";
+    /**
+     *
+     */
     private static final String           DO_NOT_TRY_TO_RUN_MARKER                   = "-skip=";
     /**
      *
@@ -128,11 +130,16 @@ public class PostBuildRunner {
     private static final String           BUILD_ID_MARKER                            = "-buildid=";
     private static final String           MAY_FAIL_MARKER                            = "-mayfail=";
     private static final String           BUILDSCRIPT_MARKER                         = "-buildscript=";
+    /** Keep {@code RUNNING_TEST} after each forked test (Ant/build: {@code -DkeepDir=true} / CLI {@code -keepDir}). */
+    private static final String           KEEP_DIR_FLAG                              = "-keepDir";
+    private static final String           KEEP_DIR_MARKER                            = "-keepDir=";
+    private static final String           KEEP_DIR_PROPERTY                          = "keepDir";
     /** Subdir under user.home for post-build test status cache: .appworktest/postbuild/{cacheKey}/ */
     private static final String           POSTBUILD_STATUS_CACHE_SUBDIR              = ".appworktest" + File.separator + "postbuild";
     /** Class name of AdminExecuter; used to detect tests that need the elevated helper (ASM dependency check). */
     private static final String           ADMIN_EXECUTER_CLASS                       = "org.appwork.testframework.executer.AdminExecuter";
     public static HashMap<String, Object> CONFIG                                     = null;
+    private static boolean                KEEP_DIR                                   = false;
 
     /**
      * @author thomas
@@ -160,6 +167,8 @@ public class PostBuildRunner {
     private static HashSet<String>         MAY_FAIL_ON_MISSING_CLASS;
     private static String                  BUILDSCRIPT_PATH;
     private static boolean                 PRINT_CLASSLOADER_ERRORS;
+    /** Resolved Dist folder for copying the HTML/JSON test report after the run. */
+    private static File                    REPORT_DIST_DIR;
     private static ArrayList<String>       TESTS_OK;
     private static HashMap<String, String> TESTS_FAILED     = new HashMap<String, String>();
     /** Env vars for tests that use AdminExecuter (lock dir, private key); set once after starting the helper. */
@@ -183,7 +192,7 @@ public class PostBuildRunner {
         if (cacheKey == null) {
             return null;
         }
-        return new File(new File(getStatusCacheDir(sanitizeBuildId(cacheKey)), "reports"), "test-report.html");
+        return new File(new File(getStatusCacheDir(sanitizeBuildId(cacheKey)), "reports"), TestCaseReporter.REPORT_HTML_FILENAME);
     }
 
     /** Sanitize buildId for use as directory name (replace path and invalid chars). */
@@ -319,7 +328,6 @@ public class PostBuildRunner {
     }
 
     public static void main(final String[] args) throws Exception {
-        BuildDecisions.setEnabled(false);
         Application.setApplication(".appwork-tests");
         AWTest.initLogger(new SimpleFormatter() {
             @Override
@@ -342,6 +350,8 @@ public class PostBuildRunner {
         DO_NOT_TRY_TO_RUN = new HashSet<String>();
         MAY_FAIL_ON_MISSING_CLASS = new HashSet<String>();
         BUILDSCRIPT_PATH = null;
+        KEEP_DIR = false;
+        REPORT_DIST_DIR = null;
         String sourceFolder = null;
         String buildId = null;
         String projectInfo = null;
@@ -354,6 +364,8 @@ public class PostBuildRunner {
                 DO_NOT_TRY_TO_RUN.add(args[i].substring(DO_NOT_TRY_TO_RUN_MARKER.length()));
             } else if (args[i].startsWith(SOURCE)) {
                 sourceFolder = args[i].substring(SOURCE.length());
+            } else if (args[i].startsWith(WORKSPACE_MARKER)) {
+                applyWorkspaceArg(args[i]);
             } else if (args[i].startsWith(BUILD_ID_MARKER)) {
                 buildId = args[i].substring(BUILD_ID_MARKER.length()).trim();
             } else if (args[i].startsWith(MAY_FAIL_MARKER)) {
@@ -366,9 +378,19 @@ public class PostBuildRunner {
                 PRINT_CLASSLOADER_ERRORS = true;
             } else if (StringUtils.equalsIgnoreCase(args[i], "-verbose")) {
                 AWTest.VERBOSE = true;
+            } else if (StringUtils.equalsIgnoreCase(args[i], KEEP_DIR_FLAG) || StringUtils.equalsIgnoreCase(args[i], "--keepDir")) {
+                KEEP_DIR = true;
+            } else if (args[i].regionMatches(true, 0, KEEP_DIR_MARKER, 0, KEEP_DIR_MARKER.length())) {
+                KEEP_DIR = isTruthyKeepDirValue(args[i].substring(KEEP_DIR_MARKER.length()));
             } else {
                 throw new WTFException("Unknown Parameter: " + args[i]);
             }
+        }
+        if (!KEEP_DIR) {
+            KEEP_DIR = isTruthyKeepDirValue(System.getProperty(KEEP_DIR_PROPERTY));
+        }
+        if (KEEP_DIR) {
+            LogV3.info(header("keepDir") + "enabled - RUNNING_TEST folders will not be deleted after tests");
         }
         // if(StringUtils.isEmpty(sourceFolder)) {
         // throw new WTFException("-source is missing");
@@ -438,6 +460,7 @@ public class PostBuildRunner {
         String cacheKey = (buildId != null && buildId.length() > 0) ? sanitizeBuildId(buildId) : baseHash;
         File statusCacheDir = getStatusCacheDir(cacheKey);
         TestCaseReporter.beginRun("PostBuild", new File(statusCacheDir, "reports"), buildId, projectInfo);
+        attachLocalReportLinks(BASE, sourceFolder, projectInfo, statusCacheDir);
         writeCacheInfo(statusCacheDir, cacheKey, buildId, BASE, projectInfo);
         final HashMap<String, PostBuildTestStatus> statusMap = new HashMap<String, PostBuildTestStatus>();
         for (Class<?> cls : testClasses) {
@@ -461,6 +484,8 @@ public class PostBuildRunner {
                 return fb.compareTo(fa);
             }
         });
+        // UAC/INTERACTIVE first so remaining tests need no user attention
+        TestTag.moveUserAttentionClassesFirst(testClasses);
         final HashMap<String, String> testResourceHashes = new HashMap<String, String>();
         final HashMap<String, Map<String, String>> testResourceRefs = new HashMap<String, Map<String, String>>();
         LogV3.info("  >>" + testClasses.size() + " Tests");
@@ -558,11 +583,46 @@ public class PostBuildRunner {
             i++;
         }
         if (i > 0 || TESTS_FAILED.size() > 0) {
+            // Still write/copy the report so Dist and the cache keep the failure overview.
+            finishReportsAndCopyToDist();
             throw new Exception("Could not find tests for at least 1 -force pattern");
         }
         LogV3.info(header("SUCCESS") + "Finished Post Build Tests");
-        TestCaseReporter.finishRunAndWriteReports();
+        finishReportsAndCopyToDist();
         LogV3.info(header("FINISHED") + "PostBuildRunnerFinished");
+    }
+
+    /** Writes HTML/JSON reports and copies them into Dist when a Dist path was resolved. */
+    private static void finishReportsAndCopyToDist() {
+        final File htmlFile = TestCaseReporter.finishRunAndWriteReports();
+        copyReportToDist(htmlFile);
+    }
+
+    /**
+     * Copies {@code test-report.html} / {@code test-report.json} into {@link #REPORT_DIST_DIR} (project Dist).
+     */
+    private static void copyReportToDist(final File htmlFile) {
+        if (htmlFile == null || !htmlFile.isFile() || REPORT_DIST_DIR == null) {
+            return;
+        }
+        try {
+            if (!REPORT_DIST_DIR.exists() && !REPORT_DIST_DIR.mkdirs()) {
+                LogV3.warning("Could not create Dist for test report: " + REPORT_DIST_DIR.getAbsolutePath());
+                return;
+            }
+            final File destHtml = new File(REPORT_DIST_DIR, htmlFile.getName());
+            IO.copyFile(htmlFile, destHtml, SYNC.META_AND_DATA);
+            final File parent = htmlFile.getParentFile();
+            if (parent != null) {
+                final File jsonFile = new File(parent, TestCaseReporter.REPORT_JSON_FILENAME);
+                if (jsonFile.isFile()) {
+                    IO.copyFile(jsonFile, new File(REPORT_DIST_DIR, jsonFile.getName()), SYNC.META_AND_DATA);
+                }
+            }
+            LogV3.info(header("report") + "copied to Dist: " + destHtml.getAbsolutePath());
+        } catch (Throwable e) {
+            LogV3.warning("Could not copy test report to Dist " + REPORT_DIST_DIR + ": " + e.getMessage());
+        }
     }
 
     /**
@@ -763,7 +823,179 @@ public class PostBuildRunner {
         }
     }
 
+    /**
+     * Applies {@code -workspace=<path>} so {@link AWTest#getWorkspace()} works when the testbase lives outside the Eclipse workspace
+     * (e.g. Temp/AppWorkBuilds).
+     */
+    private static void applyWorkspaceArg(final String arg) {
+        final String path = arg.substring(WORKSPACE_MARKER.length()).trim();
+        if (StringUtils.isEmpty(path)) {
+            throw new WTFException("Empty " + WORKSPACE_MARKER + " path");
+        }
+        final File workspace = new File(path);
+        AWTest.setWorkspace(workspace);
+        LogV3.info(header("WORKSPACE") + workspace.getAbsolutePath());
+    }
+
+    /**
+     * Resolves Dist / project / build-archive / workspace / testbase paths for HTML report quick links.
+     */
+    private static void attachLocalReportLinks(final File testbase, final String sourceFolder, final String projectInfo, final File statusCacheDir) {
+        final ArrayList<TestReportLocalLink> links = new ArrayList<TestReportLocalLink>();
+        final File projectDir = resolveProjectDir(sourceFolder, projectInfo);
+        if (projectDir != null) {
+            REPORT_DIST_DIR = resolveDistDir(projectDir, projectInfo);
+            addReportLink(links, "Dist", REPORT_DIST_DIR);
+            addReportLink(links, "Project", projectDir);
+        }
+        // "Build archive" = BuildHelper builds/{rev}/ — injected later only after snapshotAntResults (see TestCaseReporter.enrichReportsWithBuildArchive).
+        addReportLink(links, "Testbase", testbase);
+        final File workspace = resolveWorkspaceDir();
+        if (workspace != null) {
+            addReportLink(links, "Workspace", workspace);
+        }
+        if (statusCacheDir != null) {
+            addReportLink(links, "Status cache", statusCacheDir);
+            addReportLink(links, "Reports", new File(statusCacheDir, "reports"));
+        }
+        if (StringUtils.isNotEmpty(BUILDSCRIPT_PATH)) {
+            addReportLink(links, "Build script", new File(BUILDSCRIPT_PATH));
+        }
+        TestCaseReporter.setLocalLinks(links);
+    }
+
+    private static void addReportLink(final List<TestReportLocalLink> links, final String label, final File path) {
+        if (links == null || StringUtils.isEmpty(label) || path == null) {
+            return;
+        }
+        links.add(new TestReportLocalLink(label, path.getAbsolutePath()));
+    }
+
+    /** Prefer workspace/{project} from {@code -projectinfo=}; else parent of the first {@code -source=.../src}. */
+    private static File resolveProjectDir(final String sourceFolder, final String projectInfo) {
+        final File workspace = resolveWorkspaceDir();
+        final String projectName = firstToken(projectInfo);
+        if (workspace != null && StringUtils.isNotEmpty(projectName)) {
+            final File candidate = new File(workspace, projectName);
+            if (candidate.isDirectory()) {
+                return candidate;
+            }
+        }
+        if (StringUtils.isNotEmpty(sourceFolder)) {
+            final String first = sourceFolder.split(";")[0].trim();
+            if (StringUtils.isNotEmpty(first)) {
+                final File src = new File(first);
+                if ("src".equalsIgnoreCase(src.getName()) && src.getParentFile() != null) {
+                    return src.getParentFile();
+                }
+            }
+        }
+        return null;
+    }
+
+    /** {@code dist/<setup>} when that folder exists (ConnectService); otherwise {@code dist}. */
+    private static File resolveDistDir(final File projectDir, final String projectInfo) {
+        if (projectDir == null) {
+            return null;
+        }
+        final String setup = setupFromProjectInfo(projectInfo);
+        if (StringUtils.isNotEmpty(setup)) {
+            final File setupDist = new File(new File(projectDir, "dist"), setup);
+            if (setupDist.isDirectory()) {
+                return setupDist;
+            }
+        }
+        return new File(projectDir, "dist");
+    }
+
+    private static String firstToken(final String projectInfo) {
+        if (StringUtils.isEmpty(projectInfo)) {
+            return null;
+        }
+        final String trimmed = projectInfo.trim();
+        final int space = trimmed.indexOf(' ');
+        return space < 0 ? trimmed : trimmed.substring(0, space).trim();
+    }
+
+    private static String setupFromProjectInfo(final String projectInfo) {
+        if (StringUtils.isEmpty(projectInfo)) {
+            return null;
+        }
+        final String trimmed = projectInfo.trim();
+        final int space = trimmed.indexOf(' ');
+        if (space < 0) {
+            return null;
+        }
+        final String setup = trimmed.substring(space + 1).trim();
+        return StringUtils.isEmpty(setup) ? null : setup;
+    }
+
+    private static File resolveWorkspaceDir() {
+        try {
+            return AWTest.getWorkspace();
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
+    private static boolean isKeepDirEnabled() {
+        if (KEEP_DIR) {
+            return true;
+        }
+        return isTruthyKeepDirValue(System.getProperty(KEEP_DIR_PROPERTY));
+    }
+
+    private static boolean isTruthyKeepDirValue(final String value) {
+        if (StringUtils.isEmpty(value)) {
+            return false;
+        }
+        final String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return "true".equals(normalized) || "1".equals(normalized) || "yes".equals(normalized);
+    }
+
+    /**
+     * Deletes {@code RUNNING_TEST} with retry. Needed on Windows when a previous forked test (or its child
+     * processes) still hold file handles — especially after keepDir left the folder around for the next wipe.
+     */
+    private static void deleteRunningTestWithRetry(final File workingcopy) throws IOException, InterruptedException {
+        if (workingcopy == null || !workingcopy.exists()) {
+            return;
+        }
+        final long started = Time.systemIndependentCurrentJVMTimeMillis();
+        boolean loggedRetry = false;
+        while (true) {
+            try {
+                Files.deleteRecursive(workingcopy, true);
+                return;
+            } catch (IOException e) {
+                // keepDir leaves RUNNING_TEST for the next test; wipe at start had no retry and aborted the suite on Windows locks.
+                if (!loggedRetry) {
+                    LogV3.info(header("retry") + "waiting to delete locked RUNNING_TEST: " + workingcopy.getAbsolutePath() + " (" + e.getMessage() + ")");
+                    loggedRetry = true;
+                }
+                Thread.sleep(500);
+                if (Time.since(started) > 60000) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    /** Scans argv for {@link #WORKSPACE_MARKER} (used by forked {@code -test} child processes that do not re-parse all flags). */
+    private static void applyWorkspaceFromArgs(final String[] args) {
+        if (args == null) {
+            return;
+        }
+        for (int i = 0; i < args.length; i++) {
+            if (args[i] != null && args[i].startsWith(WORKSPACE_MARKER)) {
+                applyWorkspaceArg(args[i]);
+                return;
+            }
+        }
+    }
+
     protected static void runSingleTest(final String[] args) {
+        applyWorkspaceFromArgs(args);
         String testClass = args[1];
         logInfoAnyway("Test " + testClass);
         try {
@@ -923,9 +1155,8 @@ public class PostBuildRunner {
         AWTest.setLoggerSilent(true, false);
         final File workingcopy = new File(BASE, "RUNNING_TEST");
         try {
-            if (workingcopy.exists()) {
-                Files.deleteRecursive(workingcopy, true);
-            }
+            // Same retry as post-test cleanup: previous keepDir folder / child process locks must not abort the suite.
+            deleteRunningTestWithRetry(workingcopy);
             // LogV3.info("Copy " + new File(BASE, "application") + " to " + new File(workingcopy, "application"));
             IO.copyFolderRecursive(Application.getResource(""), new File(workingcopy, "application"), false, new FileFilter() {
                 @Override
@@ -1139,17 +1370,11 @@ public class PostBuildRunner {
         } finally {
             AWTest.setLoggerSilent(false, false);
             if (workingcopy.exists()) {
-                long started = Time.systemIndependentCurrentJVMTimeMillis();
-                while (true) {
-                    try {
-                        Files.deleteRecursive(workingcopy, true);
-                        break;
-                    } catch (IOException e) {
-                        Thread.sleep(500);
-                        if (Time.since(started) > 60000) {
-                            throw e;
-                        }
-                    }
+                // keepDir: leave last RUNNING_TEST for debugging (still wiped at start of the next test).
+                if (isKeepDirEnabled()) {
+                    LogV3.info(header("keepDir") + "keeping " + workingcopy.getAbsolutePath());
+                } else {
+                    deleteRunningTestWithRetry(workingcopy);
                 }
             }
         }

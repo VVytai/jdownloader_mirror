@@ -52,8 +52,27 @@ public class LogV3 {
         Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler() {
             @Override
             public void uncaughtException(final Thread t, final Throwable e) {
-                LogV3.logger(t).exception("Uncaught Exception in: " + t.getId() + "=" + t.getName(), e);
-                DebugMode.debugger();
+                // Always dump to stderr first: if LogV3 itself fails (e.g. NoClassDefFoundError while
+                // initializing sinks), the JVM only prints the handler failure and hides the original stacktrace.
+                try {
+                    final PrintStream err = System.err;
+                    err.println("Uncaught Exception in: " + t.getId() + "=" + t.getName());
+                    e.printStackTrace(err);
+                } catch (final Throwable ignore) {
+                }
+                try {
+                    LogV3.logger(t).exception("Uncaught Exception in: " + t.getId() + "=" + t.getName(), e);
+                } catch (final Throwable logError) {
+                    try {
+                        System.err.println("Failed to log uncaught exception via LogV3:");
+                        logError.printStackTrace(System.err);
+                    } catch (final Throwable ignore) {
+                    }
+                }
+                try {
+                    DebugMode.debugger();
+                } catch (final Throwable ignore) {
+                }
             }
         });
     }

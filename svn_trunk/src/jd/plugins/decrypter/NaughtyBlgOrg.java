@@ -44,7 +44,7 @@ import jd.plugins.FilePackage;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-@DecrypterPlugin(revision = "$Revision: 53056 $", interfaceVersion = 5, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53220 $", interfaceVersion = 5, names = {}, urls = {})
 public class NaughtyBlgOrg extends antiDDoSForDecrypt {
     private enum Category {
         UNDEF,
@@ -89,23 +89,23 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
 
     public ArrayList<DownloadLink> decryptIt(CryptedLink param, ProgressController progress) throws Exception {
         CATEGORY = Category.UNDEF;
-        ArrayList<DownloadLink> decryptedLinks = new ArrayList<DownloadLink>();
-        final String parameter = param.toString();
-        if (parameter.matches("https://[^/]+/(category|linkex|feed|\\d{4}|tag|free\\-desktop\\-strippers|list\\-of\\-.+|contact\\-us|how\\-to\\-download\\-files|siterips)")) {
-            logger.info("Invalid link: " + parameter);
-            decryptedLinks.add(this.createOfflinelink(parameter));
-            return decryptedLinks;
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        final String contenturl = param.getCryptedUrl();
+        if (contenturl.matches("https://[^/]+/(category|linkex|feed|\\d{4}|tag|free\\-desktop\\-strippers|list\\-of\\-.+|contact\\-us|how\\-to\\-download\\-files|siterips)")) {
+            logger.info("Invalid link: " + contenturl);
+            ret.add(this.createOfflinelink(contenturl));
+            return ret;
         }
         br.setFollowRedirects(true);
-        getPage(parameter);
+        getPage(contenturl);
         if (br.getRequest().getHttpConnection().getResponseCode() == 404 || br.containsHTML(">Page not found \\(404\\)<|>403 Forbidden<") || br.containsHTML("No htmlCode read")) {
-            decryptedLinks.add(this.createOfflinelink(parameter));
-            return decryptedLinks;
+            ret.add(this.createOfflinelink(contenturl));
+            return ret;
         } else if (br.containsHTML(">Deleted due DMCA report<")) {
-            decryptedLinks.add(this.createOfflinelink(parameter));
-            return decryptedLinks;
+            ret.add(this.createOfflinelink(contenturl));
+            return ret;
         }
-        getPage(parameter);
+        getPage(contenturl);
         final String nonce = br.getRegex("\"nonce\"\\s*:\\s*\"(.*?)\"").getMatch(0);
         final String post_id = br.getRegex("\"post_id\"\\s*:\\s*\"(.*?)\"").getMatch(0);
         final String captcha_key = br.getRegex("\"recaptcha_key\"\\s*:\\s*\"(.*?)\"").getMatch(0);
@@ -124,24 +124,20 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
             form.put("area", URLEncoder.encode(data_area, "UTF-8"));
             form.put("captcha_id", data_psid);
             form.put("type", "recaptcha");
-            try {
-                if (CaptchaHelperCrawlerPluginRecaptchaV2.isValidSiteKey(captcha_key)) {
-                    final String response = new CaptchaHelperCrawlerPluginRecaptchaV2(this, br, captcha_key).getToken();
-                    form.put("token", response);
-                } else if (CaptchaHelperCrawlerPluginHCaptcha.isValidSiteKey(captcha_key)) {
-                    final String response = new CaptchaHelperCrawlerPluginHCaptcha(this, br, captcha_key).getToken();
-                    form.put("token", response);
-                } else {
-                    throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT, "Unsupported captchaKey:" + captcha_key);
-                }
-                final Browser brc = br.cloneBrowser();
-                brc.submitForm(form);
-                final Map<String, Object> response = restoreFromString(brc.toString(), TypeRef.MAP);
-                if (Boolean.TRUE.equals(response.get("success"))) {
-                    downloadhidden = (String) response.get("content");
-                }
-            } catch (PluginException e) {
-                logger.log(e);
+            if (CaptchaHelperCrawlerPluginRecaptchaV2.isValidSiteKey(captcha_key)) {
+                final String response = new CaptchaHelperCrawlerPluginRecaptchaV2(this, br, captcha_key).getToken();
+                form.put("token", response);
+            } else if (CaptchaHelperCrawlerPluginHCaptcha.isValidSiteKey(captcha_key)) {
+                final String response = new CaptchaHelperCrawlerPluginHCaptcha(this, br, captcha_key).getToken();
+                form.put("token", response);
+            } else {
+                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT, "Unsupported captchaKey:" + captcha_key);
+            }
+            final Browser brc = br.cloneBrowser();
+            brc.submitForm(form);
+            final Map<String, Object> response = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
+            if (Boolean.TRUE.equals(response.get("success"))) {
+                downloadhidden = (String) response.get("content");
             }
         }
         // String content = this.br.getRegex(Pattern.compile("<div id=\"main\\-content\" class=\"main\\-content\\-single\">(.*?)<h3
@@ -153,8 +149,8 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
         }
         if (contentReleaseName == null) {
             logger.warning("Crawler broken or content offline");
-            decryptedLinks.add(this.createOfflinelink(parameter));
-            return decryptedLinks;
+            ret.add(this.createOfflinelink(contenturl));
+            return ret;
         }
         // replace en-dash with a real dash
         contentReleaseName = contentReleaseName.replace("&#8211;", "-");
@@ -166,7 +162,7 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
             // replace en-dash with a real dash
             contentReleaseNamePrecise = contentReleaseNamePrecise.replace("&#8211;", "-");
             contentReleaseNamePrecise = Encoding.htmlDecode(contentReleaseNamePrecise).trim();
-            int pos = contentReleaseName.lastIndexOf("-");
+            final int pos = contentReleaseName.lastIndexOf("-");
             if (pos != -1) {
                 contentReleaseName = contentReleaseName.substring(0, pos).trim();
                 contentReleaseName = contentReleaseName + " - " + contentReleaseNamePrecise;
@@ -218,7 +214,7 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
         if (contentReleaseLinks == null) {
             logger.warning("contentReleaseLinks == null");
             /* Final fallback --> Scan complete html */
-            contentReleaseLinks = br.toString();
+            contentReleaseLinks = br.getRequest().getHtmlCode();
         }
         final Set<String> links = new HashSet<String>();
         final String[] foundLinks = HTMLParser.getHttpLinks(contentReleaseLinks, null);
@@ -237,7 +233,7 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
                 String cleanedRegExString = link.replace("<a href=", "");
                 cleanedRegExString = link.replace(" title", "");
                 final DownloadLink dl = createDownloadlink(cleanedRegExString);
-                decryptedLinks.add(dl);
+                ret.add(dl);
             }
         }
         // final String[] imgs = br.getRegex("(https://([\\w\\.]+)?pixhost\\.to/show/[^\"]+)").getColumn(0);
@@ -245,13 +241,13 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
         if (links != null && links.size() != 0) {
             for (final String img : imgs) {
                 final DownloadLink dl = createDownloadlink(img);
-                decryptedLinks.add(dl);
+                ret.add(dl);
             }
         }
         final FilePackage linksFP = FilePackage.getInstance();
         linksFP.setName(getFpName(contentReleaseName));
-        linksFP.addLinks(decryptedLinks);
-        return decryptedLinks;
+        linksFP.addLinks(ret);
+        return ret;
     }
 
     private String getFpName(String filePackageName) {
@@ -259,7 +255,7 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
         case CLIP:
             final int firstOccurrenceOfSeparator = filePackageName.indexOf(" - ");
             if (firstOccurrenceOfSeparator > -1) {
-                StringBuffer sb = new StringBuffer(filePackageName);
+                final StringBuffer sb = new StringBuffer(filePackageName);
                 sb.insert(firstOccurrenceOfSeparator, " - Clips");
                 filePackageName = sb.toString();
             }

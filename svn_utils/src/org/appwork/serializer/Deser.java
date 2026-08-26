@@ -4,25 +4,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import org.appwork.build.RequiresResource;
-import org.appwork.builddecision.BuildDecisionRequired;
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.storage.TypeRef;
 import org.appwork.storage.commonInterface.SerializerException;
 import org.appwork.storage.commonInterface.SerializerInterface;
 import org.appwork.utils.reflection.Clazz;
 
-@BuildDecisionRequired(tags = { DeserConstants.DESER_SIMPLE, DeserConstants.DESER_FLEXI }, imports = { DeserConstants.CLASS_SIMPLE, DeserConstants.CLASS_FLEXI })
-@RequiresResource(types = { DeserConstants.class })
+@RequiresResource(types = { DeserConstants.class, org.appwork.storage.SimpleSerializer.class, org.appwork.storage.flexijson.FlexiSerializer.class })
 public class Deser {
     private static SerializerInterface              SERIALIZER        = createDefaultSerializer();
     private static ThreadLocal<SerializerInterface> THREAD_SERIALIZER = new ThreadLocal<SerializerInterface>();
 
     public static SerializerInterface createDefaultSerializer() {
-        String def = DeserConstants.CLASS_SIMPLE;
-        if (BuildDecisions.contains(DeserConstants.DESER_FLEXI)) {
-            def = DeserConstants.CLASS_FLEXI;
-        }
-        final String cls = System.getProperty(DeserConstants.AWU_SERIALIZER_CLASS, def);
+        final String cls = System.getProperty(DeserConstants.AWU_SERIALIZER_CLASS, DeserConstants.CLASS_SIMPLE);
         try {
             return (SerializerInterface) Class.forName(cls).newInstance();
         } catch (InstantiationException e) {

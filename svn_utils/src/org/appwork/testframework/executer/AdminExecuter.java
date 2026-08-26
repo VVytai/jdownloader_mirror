@@ -31,8 +31,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.appwork.experimental.windowsexecuter.ExecuteOptions;
-import org.appwork.experimental.windowsexecuter.WindowsExecuter;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.processes.ProcessHandlerFactory;
 import org.appwork.processes.ProcessInfo;
@@ -47,6 +45,8 @@ import org.appwork.utils.encoding.Base64;
 import org.appwork.utils.formatter.HexFormatter;
 import org.appwork.utils.os.CrossSystem;
 import org.appwork.utils.os.JNAProcessInfo;
+import org.appwork.utils.os.windows.execute.RunAsHelper;
+import org.appwork.utils.os.windows.execute.RunAsLaunchOptions;
 import org.appwork.utils.duration.TimeSpan;
 import org.appwork.utils.os.NotSupportedException;
 import org.appwork.utils.os.WindowsUtils;
@@ -1273,52 +1273,53 @@ public final class AdminExecuter {
     /**
      * Runs a command as non-elevated user. Use this when already inside a runAsAdmin or runAsLocalSystem task and something must run with
      * normal user rights (e.g. start UI, access HKCU, or avoid admin-only APIs). When the current process is already non-elevated, the
-     * command runs in-process. When elevated or LocalSystem, delegates to {@link WindowsExecuter#runAsNonElevatedUser(ExecuteOptions)}.
+     * command runs in-process. When elevated, delegates to {@link RunAsHelper#runNonElevated}. When LocalSystem, requires
+     * {@code sessionId} and delegates to {@link RunAsHelper#runInSession}.
      *
+     * @param cmd
+     *            command and arguments; must not be null or empty
      * @param options
-     *            command, workingDir, waitFor, optional logCallback; must not be null
+     *            launch options (workingDir, waitFor, logCallback); null uses {@link RunAsLaunchOptions#DEFAULT}
      * @return process output; when waitFor is false, exitCode is -1 and remotePid may be set
      */
-    public static ProcessOutput runAsNonElevatedUser(ExecuteOptions options) throws Exception {
-        if (!CrossSystem.isWindows()) {
-            throw new UnsupportedOperationException("runAsNonElevatedUser is only supported on Windows");
-        }
-        if (options == null) {
-            throw new IllegalArgumentException("options cannot be null");
-        }
-        if (isVerbose()) {
-            LogV3.info("AdminExecuter [verbose]: runAsNonElevatedUser entered cmd=" + java.util.Arrays.toString(options.getCmd()) + " waitFor=" + options.isWaitFor());
-        }
-        if (WindowsUtils.isElevated() || WindowsUtils.isRunningAsLocalSystem()) {
-            if (isVerbose()) {
-                LogV3.info("AdminExecuter [verbose]: elevated or LocalSystem, delegating to WindowsExecuter.runAsNonElevatedUser");
-            }
-            return WindowsExecuter.runAsNonElevatedUser(options);
-        }
-        if (isVerbose()) {
-            LogV3.info("AdminExecuter [verbose]: already non-elevated, running command in-process");
-        }
-        String[] cmd = options.getCmd();
-        ProcessBuilder pb = ProcessBuilderFactory.create(cmd != null ? cmd : new String[0]);
-        File workDir = options.getWorkingDir();
-        if (workDir != null && workDir.isDirectory()) {
-            pb.directory(workDir);
-        }
-        if (options.isWaitFor()) {
-            return ProcessBuilderFactory.runCommand(pb);
-        }
-        pb.start();
-        String codePage = "UTF-8";
-        try {
-            codePage = ProcessBuilderFactory.getConsoleCodepage();
-        } catch (Throwable t) {
-            // ignore
-        }
-        return new ProcessOutput(-1, new ByteArrayOutputStream(), new ByteArrayOutputStream(), codePage, null, null);
+    public static ProcessOutput runAsNonElevatedUser(String[] cmd, RunAsLaunchOptions options) throws Exception {
+        return runAsNonElevatedUser(cmd, options, null);
     }
 
     /**
-     * Runs a single command as non-elevated user. Convenience overload that builds {@link ExecuteOptions} from workDir, cmd and options.
+     * Same as {@link #runAsNonElevatedUser(String[], RunAsLaunchOptions)} with an explicit WTS session id for LocalSystem callers.
+     *
+     * @param sessionId
+     *            required when running as LocalSystem (interactive session to launch as); ignored otherwise; may be null when not LocalSystem
+     */
+    public static ProcessOutput runAsNonElevatedUser(String[] cmd, RunAsLaunchOptions options, Integer sessionId) throws Exception {
+        if (!CrossSystem.isWindows()) {
+            throw new UnsupportedOperationException("runAsNonElevatedUser is only supported on Windows");
+        }
+        if (cmd == null || cmd.length == 0) {
+            throw new IllegalArgumentException("cmd cannot be null or empty");
+        }
+        final RunAsLaunchOptions opts = options != null ? options : RunAsLaunchOptions.DEFAULT;
+        if (isVerbose()) {
+            LogV3.info("AdminExecuter [verbose]: runAsNonElevatedUser entered cmd=" + java.util.Arrays.toString(cmd) + " waitFor=" + opts.isWaitFor() + " sessionId=" + sessionId);
+        }
+        if (WindowsUtils.isRunningAsLocalSystem()) {
+            if (sessionId == null || sessionId.intValue() < 0 || sessionId.intValue() == (int) 0xFFFFFFFFL) {
+                throw new IllegalStateException("From LocalSystem, sessionId is required.");
+            }
+            if (isVerbose()) {
+                LogV3.info("AdminExecuter [verbose]: LocalSystem, delegating to RunAsHelper.runInSession");
+            }
+            return RunAsHelper.runInSession(sessionId.intValue(), cmd, opts);
+        }
+        if (isVerbose()) {
+            LogV3.info("AdminExecuter [verbose]: delegating to RunAsHelper.runNonElevated (elevated=" + WindowsUtils.isElevated() + ")");
+        }
+        return RunAsHelper.runNonElevated(cmd, opts);
+    }
+
+    /**
+     * Runs a single command as non-elevated user. Convenience overload that builds {@link RunAsLaunchOptions} from workDir, cmd and options.
      *
      * @param workDir
      *            working directory (null allowed)
@@ -1328,15 +1329,15 @@ public final class AdminExecuter {
      *            launch options (waitFor, logCallback); null uses {@link ProcessOptions#DEFAULT}
      */
     public static ProcessOutput runAsNonElevatedUser(File workDir, String[] cmd, ProcessOptions options) throws Exception {
-        ProcessOptions opts = options != null ? options : ProcessOptions.DEFAULT;
-        ExecuteOptions.Builder b = ExecuteOptions.builder().cmd(cmd != null ? cmd : new String[0]).waitFor(opts.isWaitFor());
+        ProcessOptions pOpts = options != null ? options : ProcessOptions.DEFAULT;
+        RunAsLaunchOptions.Builder b = RunAsLaunchOptions.builder().waitFor(pOpts.isWaitFor());
         if (workDir != null && workDir.isDirectory()) {
             b.workingDir(workDir);
         }
-        if (opts.getLogCallback() != null) {
-            b.logCallback(opts.getLogCallback());
+        if (pOpts.getLogCallback() != null) {
+            b.logCallback(pOpts.getLogCallback());
         }
-        return runAsNonElevatedUser(b.build());
+        return runAsNonElevatedUser(cmd != null ? cmd : new String[0], b.build(), null);
     }
 
     /**

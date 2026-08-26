@@ -15,10 +15,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.util.EnumSet;
+import java.util.Set;
 
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ProcessOptions;
 import org.appwork.utils.Application;
@@ -41,6 +44,11 @@ public class ProtectedSingleAppInstanceTest extends AWTest {
 
     public static void main(String[] args) throws Exception {
         run();
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

@@ -11,7 +11,9 @@ package org.appwork.experimental.windowsexecuter.tests;
 import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.appwork.experimental.windowsexecuter.ExecuteOptions;
 import org.appwork.experimental.windowsexecuter.WindowsExecuter;
@@ -20,6 +22,7 @@ import org.appwork.loggingv3.LogV3;
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.utils.LogCallback;
@@ -48,6 +51,11 @@ public class TestRunAsNonElevatedUser extends AWTest implements Serializable {
     @Override
     public boolean isMaintenance() {
         return true;
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

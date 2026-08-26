@@ -45,7 +45,6 @@ import org.appwork.storage.TypeRef;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.utils.Application;
 import org.appwork.utils.IO;
-import org.appwork.builddecision.BuildDecisions;
 
 /**
  * Runner class that executes a method on a class in a child JRE process. This class is used internally by
@@ -89,7 +88,6 @@ public class JREMethodRunner {
             System.exit(EXIT_INVALID_ARGS);
             return;
         }
-        BuildDecisions.setEnabled(false);
         String helperAppRoot = System.getenv(AdminExecuter.ENV_HELPER_APP_ROOT);
         if (helperAppRoot != null && helperAppRoot.length() > 0) {
             System.setProperty("ROOT", helperAppRoot);

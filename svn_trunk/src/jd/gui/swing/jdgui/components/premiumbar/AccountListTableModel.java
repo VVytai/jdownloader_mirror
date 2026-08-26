@@ -469,12 +469,12 @@ public class AccountListTableModel extends ExtTableModel<AccountEntry> implement
                 final AccountTrafficView accountTrafficView = acc.getAccountTrafficView();
                 if (accountTrafficView == null) {
                     return "";
-                }
-                if (accountTrafficView.isUnlimitedTraffic()) {
+                } else if (accountTrafficView.isUnlimitedTraffic()) {
                     return _GUI.T.premiumaccounttablemodel_column_trafficleft_unlimited();
-                }
-                synchronized (formatter) {
-                    return _GUI.T.premiumaccounttablemodel_column_trafficleft_left_(SIZEUNIT.formatValue(maxSizeUnit, formatter, accountTrafficView.getTrafficLeft()), SIZEUNIT.formatValue(maxSizeUnit, formatter, accountTrafficView.getTrafficMax()));
+                } else {
+                    synchronized (formatter) {
+                        return _GUI.T.premiumaccounttablemodel_column_trafficleft_left_(SIZEUNIT.formatValue(maxSizeUnit, formatter, accountTrafficView.getTrafficLeft()), SIZEUNIT.formatValue(maxSizeUnit.toNonNegativeUnit(), formatter, accountTrafficView.getTrafficMax()));
+                    }
                 }
             }
 
@@ -492,11 +492,11 @@ public class AccountListTableModel extends ExtTableModel<AccountEntry> implement
                 final AccountTrafficView accountTrafficView = acc.getAccountTrafficView();
                 if (accountTrafficView == null) {
                     return 0;
-                }
-                if (accountTrafficView.isUnlimitedTraffic()) {
+                } else if (accountTrafficView.isUnlimitedTraffic()) {
                     return Long.MAX_VALUE;
+                } else {
+                    return accountTrafficView.getTrafficMax();
                 }
-                return accountTrafficView.getTrafficMax();
             }
 
             @Override
@@ -513,11 +513,11 @@ public class AccountListTableModel extends ExtTableModel<AccountEntry> implement
                 final AccountTrafficView accountTrafficView = acc.getAccountTrafficView();
                 if (accountTrafficView == null) {
                     return 0;
-                }
-                if (accountTrafficView.isUnlimitedTraffic()) {
+                } else if (accountTrafficView.isUnlimitedTraffic()) {
                     return Long.MAX_VALUE;
+                } else {
+                    return accountTrafficView.getTrafficLeft();
                 }
-                return accountTrafficView.getTrafficLeft();
             }
         });
         if (owner != null && owner instanceof ServicePanel) {

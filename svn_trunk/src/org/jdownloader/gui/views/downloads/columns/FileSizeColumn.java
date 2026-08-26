@@ -13,6 +13,7 @@ import org.appwork.utils.swing.renderer.RenderLabel;
 import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SizeUnitInterface;
 
 import jd.controlling.linkcrawler.CrawledLink;
 import jd.controlling.linkcrawler.CrawledPackage;
@@ -24,10 +25,9 @@ public class FileSizeColumn extends ExtColumn<AbstractNode> {
     /**
      *
      */
-    private final RenderLabel sizeRenderer;
-    private NumberFormat      formatter;
-    private final String      zeroString;
-    private final SIZEUNIT    maxSizeUnit;
+    private final RenderLabel       sizeRenderer;
+    private NumberFormat            formatter;
+    private final SizeUnitInterface maxSizeUnit;
 
     public JPopupMenu createHeaderPopup() {
         return FileColumn.createColumnPopup(this, getMinWidth() == getMaxWidth() && getMaxWidth() > 0);
@@ -42,8 +42,7 @@ public class FileSizeColumn extends ExtColumn<AbstractNode> {
         super(_GUI.T.FileSizeColumn_FileSizeColumn(), null);
         this.sizeRenderer = new RenderLabel();
         this.sizeRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
-        this.zeroString = _GUI.T.SizeColumn_getSizeString_zero();
-        maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
+        maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit().toNonNegativeUnit(_GUI.T.SizeColumn_getSizeString_zero());
         this.setRowSorter(new ExtDefaultRowSorter<AbstractNode>() {
             @Override
             public int compare(final AbstractNode o1, final AbstractNode o2) {
@@ -97,11 +96,7 @@ public class FileSizeColumn extends ExtColumn<AbstractNode> {
     }
 
     private final String getSizeString(final long fileSize) {
-        if (fileSize < 0) {
-            return zeroString;
-        } else {
-            return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
-        }
+        return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
     }
 
     @Override

@@ -16,15 +16,16 @@ import org.jdownloader.myjdownloader.client.json.AvailableLinkState;
 import org.jdownloader.settings.GeneralSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SizeUnitInterface;
 
 import jd.controlling.linkcrawler.CrawledLink;
 import jd.controlling.linkcrawler.CrawledPackage;
 
 public class AggregatedCrawlerNumbers {
-    protected static final boolean FORCED_MIRROR_CASE_INSENSITIVE = CrossSystem.isWindows() || JsonConfig.create(GeneralSettings.class).isForceMirrorDetectionCaseInsensitive();
-    private final long             totalBytes;
-    private static final SIZEUNIT  maxSizeUnit                    = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
-    private final DecimalFormat    formatter                      = new DecimalFormat();
+    protected static final boolean         FORCED_MIRROR_CASE_INSENSITIVE = CrossSystem.isWindows() || JsonConfig.create(GeneralSettings.class).isForceMirrorDetectionCaseInsensitive();
+    private final long                     totalBytes;
+    private static final SizeUnitInterface maxSizeUnit                    = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit().toNonNegativeUnit(_GUI.T.lit_unknown());
+    private final DecimalFormat            formatter                      = new DecimalFormat();
 
     public final String getTotalBytesString(boolean includeDisabled) {
         if (includeDisabled) {
@@ -35,11 +36,7 @@ public class AggregatedCrawlerNumbers {
     }
 
     private final String format(long totalBytes2) {
-        if (totalBytes2 < 0) {
-            return _GUI.T.lit_unknown();
-        } else {
-            return SIZEUNIT.formatValue(maxSizeUnit, formatter, totalBytes2);
-        }
+        return SIZEUNIT.formatValue(maxSizeUnit, formatter, totalBytes2);
     }
 
     public final int getLinkCount() {

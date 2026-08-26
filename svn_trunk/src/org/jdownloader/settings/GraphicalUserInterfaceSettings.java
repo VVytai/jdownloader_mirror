@@ -507,8 +507,12 @@ public interface GraphicalUserInterfaceSettings extends ConfigInterface {
         }
 
         public long to(SPEEDUNIT dest, long value) {
-            final long ret = (value * getDivider()) / dest.getDivider();
-            return ret;
+            if (value == 0) {
+                return 0;
+            } else {
+                final long ret = (value * getDivider()) / dest.getDivider();
+                return ret;
+            }
         }
 
         public static final String formatValue(SPEEDUNIT maxSizeUnit, final long speed) {
@@ -606,6 +610,10 @@ public interface GraphicalUserInterfaceSettings extends ConfigInterface {
                         return formatter.format(speed / (double) B.getDivider()).concat(" Byte");
                     }
                 } else if (speed < 0) {
+                    /*
+                     * Speeds are never meant to be negative, so - unlike SIZEUNIT.formatValue - a negative value is treated as invalid and
+                     * displayed as "~" instead of being formatted as an absolute value.
+                     */
                     return "~";
                 } else {
                     if (isBit) {
@@ -618,7 +626,23 @@ public interface GraphicalUserInterfaceSettings extends ConfigInterface {
         }
     }
 
-    public static enum SIZEUNIT {
+    public static interface SizeUnitInterface {
+        public boolean isIECPrefix();
+
+        public long getDivider();
+
+        public SIZEUNIT getUnit();
+
+        public boolean allowNegative();
+
+        public SizeUnitInterface toNonNegativeUnit();
+
+        public String getNegativeString();
+
+        public SizeUnitInterface toNonNegativeUnit(String String);
+    };
+
+    public static enum SIZEUNIT implements SizeUnitInterface {
         TiB(1024 * 1024 * 1024 * 1024l, true),
         TB(1000 * 1000 * 1000 * 1000l),
         GiB(1024 * 1024 * 1024l, true),
@@ -636,6 +660,10 @@ public interface GraphicalUserInterfaceSettings extends ConfigInterface {
             return iecPrefix;
         }
 
+        public final SIZEUNIT getUnit() {
+            return this;
+        }
+
         public final long getDivider() {
             return divider;
         }
@@ -649,63 +677,120 @@ public interface GraphicalUserInterfaceSettings extends ConfigInterface {
             this(divider, false);
         }
 
-        public long to(SIZEUNIT dest, long value) {
-            final long ret = (value * getDivider()) / dest.getDivider();
-            return ret;
+        public long to(SizeUnitInterface dest, long value) {
+            if (value == 0) {
+                return 0;
+            } else {
+                final long ret = (value * getDivider()) / dest.getDivider();
+                return ret;
+            }
         }
 
-        public static final String formatValue(SIZEUNIT maxSizeUnit, final long fileSize) {
+        public static final String formatValue(SizeUnitInterface maxSizeUnit, final long fileSize) {
             return formatValue(maxSizeUnit, new DecimalFormat(), fileSize);
         }
 
-        public static final String formatValue(SIZEUNIT maxSizeUnit, final DecimalFormat formatter, final long fileSize) {
+        public static final String formatValue(SizeUnitInterface maxSizeUnit, final DecimalFormat formatter, final long fileSize) {
             return formatValue(maxSizeUnit, (NumberFormat) formatter, fileSize);
         }
 
-        public static final String formatValue(final SIZEUNIT maxSizeUnit, final NumberFormat formatter, final long fileSize) {
+        public static final String formatValue(final SizeUnitInterface maxSizeUnit, final NumberFormat formatter, final long fileSize) {
+            if (!maxSizeUnit.allowNegative() && fileSize < 0) {
+                return maxSizeUnit.getNegativeString();
+            }
+            final long fileSizeAbs = Math.abs(fileSize);
             final boolean isIECPrefix = maxSizeUnit.isIECPrefix();
-            switch (maxSizeUnit) {
+            switch (maxSizeUnit.getUnit()) {
             case TiB:
-                if (fileSize >= TiB.getDivider()) {
+                if (fileSizeAbs >= TiB.getDivider()) {
                     return _AWU.T.literally_tebibyte(formatter.format(fileSize / (double) TiB.getDivider()));
                 }
             case TB:
-                if (!isIECPrefix && fileSize >= TB.getDivider()) {
+                if (!isIECPrefix && fileSizeAbs >= TB.getDivider()) {
                     return formatter.format(fileSize / (double) TB.getDivider()).concat(" TB");
                 }
             case GiB:
-                if (isIECPrefix && fileSize >= GiB.getDivider()) {
+                if (isIECPrefix && fileSizeAbs >= GiB.getDivider()) {
                     return _AWU.T.literally_gibibyte(formatter.format(fileSize / (double) GiB.getDivider()));
                 }
             case GB:
-                if (!isIECPrefix && fileSize >= GB.getDivider()) {
+                if (!isIECPrefix && fileSizeAbs >= GB.getDivider()) {
                     return formatter.format(fileSize / (double) GB.getDivider()).concat(" GB");
                 }
             case MiB:
-                if (isIECPrefix && fileSize >= MiB.getDivider()) {
+                if (isIECPrefix && fileSizeAbs >= MiB.getDivider()) {
                     return _AWU.T.literally_mebibyte(formatter.format(fileSize / (double) MiB.getDivider()));
                 }
             case MB:
-                if (!isIECPrefix && fileSize >= MB.getDivider()) {
+                if (!isIECPrefix && fileSizeAbs >= MB.getDivider()) {
                     return formatter.format(fileSize / (double) MB.getDivider()).concat(" MB");
                 }
             case KiB:
-                if (isIECPrefix && fileSize >= KiB.getDivider()) {
+                if (isIECPrefix && fileSizeAbs >= KiB.getDivider()) {
                     return _AWU.T.literally_kibibyte(formatter.format(fileSize / (double) KiB.getDivider()));
                 }
             case KB:
-                if (!isIECPrefix && fileSize >= KB.getDivider()) {
+                if (!isIECPrefix && fileSizeAbs >= KB.getDivider()) {
                     return formatter.format(fileSize / (double) KB.getDivider()).concat(" KB");
                 }
             default:
-                if (fileSize > 0) {
-                    return _AWU.T.literally_byte_string(StringUtils.toString(formatter, fileSize));
-                } else if (fileSize < 0) {
-                    return "~";
-                } else {
-                    return _AWU.T.literally_byte_string(StringUtils.toString(formatter, 0));
-                }
+                return _AWU.T.literally_byte_string(StringUtils.toString(formatter, fileSize));
             }
+        }
+
+        @Override
+        public SizeUnitInterface toNonNegativeUnit() {
+            return toNonNegativeUnit("~");
+        }
+
+        @Override
+        public boolean allowNegative() {
+            return true;
+        }
+
+        @Override
+        public SizeUnitInterface toNonNegativeUnit(final String finalNegativeString) {
+            return new SizeUnitInterface() {
+                @Override
+                public boolean isIECPrefix() {
+                    return SIZEUNIT.this.isIECPrefix();
+                }
+
+                @Override
+                public long getDivider() {
+                    return SIZEUNIT.this.getDivider();
+                }
+
+                @Override
+                public SIZEUNIT getUnit() {
+                    return SIZEUNIT.this.getUnit();
+                }
+
+                @Override
+                public boolean allowNegative() {
+                    return false;
+                }
+
+                @Override
+                public SizeUnitInterface toNonNegativeUnit() {
+                    return getUnit().toNonNegativeUnit(finalNegativeString);
+                }
+
+                @Override
+                public SizeUnitInterface toNonNegativeUnit(final String negativeString) {
+                    return getUnit().toNonNegativeUnit(negativeString);
+                }
+
+                @Override
+                public String getNegativeString() {
+                    return finalNegativeString;
+                }
+            };
+        }
+
+        @Override
+        public String getNegativeString() {
+            return null;
         }
     }
 

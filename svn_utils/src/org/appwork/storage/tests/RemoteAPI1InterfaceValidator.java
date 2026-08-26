@@ -27,6 +27,8 @@ import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
 import org.appwork.testhelper.IgnoreInAWTest;
 import org.appwork.utils.ClassPathScanner;
+import org.appwork.utils.DebugMode;
+import org.appwork.utils.Exceptions;
 import org.appwork.utils.ReflectionUtils;
 import org.appwork.utils.reflection.Clazz;
 import org.appwork.utils.reflection.CompiledType;
@@ -52,6 +54,14 @@ public class RemoteAPI1InterfaceValidator extends AWTest {
             }
             final Class<?> finalApi2 = api2;
             new ClassPathScanner<Throwable>() {
+                protected boolean skip(String classname) {
+                    if (classname.startsWith("org.appwork.")) {
+                        return true;
+                    } else {
+                        return false;
+                    }
+                };
+
                 @Override
                 public void handle(Class<?> cls) throws Throwable {
                     allClasses.add(cls);
@@ -67,8 +77,14 @@ public class RemoteAPI1InterfaceValidator extends AWTest {
             }.run();
             scannedClassPathClasses = allClasses;
             for (final Class<?> apiInterface : apiInterfaces) {
-                validateClass(apiInterface);
-                tested.add(apiInterface);
+                try {
+                    LogV3.info("Validate " + apiInterface);
+                    validateClass(apiInterface);
+                    tested.add(apiInterface);
+                } catch (NoClassDefFoundError e) {
+                    DebugMode.debugger();
+                    throw Exceptions.addSuppressed(e, new Exception("Faild at " + apiInterface));
+                }
             }
         } catch (Throwable e) {
             if (e instanceof Exception) {

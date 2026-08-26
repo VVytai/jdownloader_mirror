@@ -54,6 +54,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.appwork.loggingv3.LogV3;
@@ -140,6 +141,10 @@ public class HttpServer extends AbstractServerBasics implements Runnable {
      */
     private long                                           threadPoolKeepAliveTime    = 10000L;
     private volatile SocketAddressValidator                socketAddressValidator     = DefaultSocketAddressValidator.get();
+    // Rate-limit reject logs: flood of untrusted connects must not spam the log
+    private static final long                              REJECTED_CONNECTION_LOG_INTERVAL_MS = 1000L;
+    private final AtomicLong                               lastRejectedConnectionLog  = new AtomicLong(0);
+    private final AtomicInteger                            rejectedConnectionLogSkipCount = new AtomicInteger(0);
 
     public HttpServer(final int port) {
         super("AppWork GmbH HttpServer");
@@ -361,10 +366,7 @@ public class HttpServer extends AbstractServerBasics implements Runnable {
                                         }
                                     }
                                     if (!allowed) {
-                                        if (HttpServer.this.verboseLog) {
-                                            LogV3.fine("HttpServer: Rejected Connection. socket address validator returned false");
-                                            LogV3.warning("Security: Untrusted IPC remote rejected | Remote: " + clientSocket.getRemoteSocketAddress() + " | Closing connection without response");
-                                        }
+                                        HttpServer.this.logRejectedConnection(clientSocket);
                                         continue connectionLoop;
                                     } else if (HttpServer.this.verboseLog) {
                                         LogV3.fine("HttpServer: socket address validator: OK");
@@ -442,7 +444,7 @@ public class HttpServer extends AbstractServerBasics implements Runnable {
 
     /*
      * (non-Javadoc)
-     * 
+     *
      * @see java.lang.Runnable#run()
      */
     /**
@@ -585,6 +587,14 @@ public class HttpServer extends AbstractServerBasics implements Runnable {
     }
 
     /**
+     * Optional non-TCP bind address (e.g. junixsocket {@code AFUNIXSocketAddress}). Default {@code null} keeps TCP bind behaviour.
+     * Override together with {@link #createServerSocket()} when listening on a Unix Domain Socket.
+     */
+    protected SocketAddress getCustomBindAddress(final int port) throws IOException {
+        return null;
+    }
+
+    /**
      *
      */
     public synchronized void start() throws IOException {
@@ -596,7 +606,14 @@ public class HttpServer extends AbstractServerBasics implements Runnable {
             } else {
                 port = getWishedPort();
             }
-            if (this.isLocalhostOnly()) {
+            final SocketAddress customBindAddress = this.getCustomBindAddress(port);
+            if (customBindAddress != null) {
+                final ServerSocket controlSocket = this.createServerSocket();
+                LogV3.info("Try to bind Server to " + customBindAddress);
+                controlSocket.bind(customBindAddress);
+                lastPort = controlSocket.getLocalPort();
+                serverSockets.add(controlSocket);
+            } else if (this.isLocalhostOnly()) {
                 /* we only want localhost bound here */
                 final List<BindException> bindExceptions = new ArrayList<BindException>();
                 final InetAddress[] localhost = this.getLocalHost();
@@ -684,6 +701,22 @@ public class HttpServer extends AbstractServerBasics implements Runnable {
     public void unregisterRequestHandler(final HttpRequestHandler handler) {
         if (handler != null) {
             requestHandlers.remove(handler);
+        }
+    }
+
+    /**
+     * Logs rejected connections at most once per {@link #REJECTED_CONNECTION_LOG_INTERVAL_MS} so connection floods cannot fill the log.
+     */
+    protected void logRejectedConnection(final Socket clientSocket) {
+        final long now = Time.systemIndependentCurrentJVMTimeMillis();
+        final long last = this.lastRejectedConnectionLog.get();
+        if (now - last >= HttpServer.REJECTED_CONNECTION_LOG_INTERVAL_MS && this.lastRejectedConnectionLog.compareAndSet(last, now)) {
+            final int skipped = this.rejectedConnectionLogSkipCount.getAndSet(0);
+            final String suppressed = skipped > 0 ? " | suppressed " + skipped + " similar since last log" : "";
+            LogV3.fine("HttpServer: Rejected Connection. socket address validator returned false" + suppressed);
+            LogV3.warning("Security: Untrusted IPC remote rejected | Remote: " + clientSocket.getRemoteSocketAddress() + " | Closing connection without response" + suppressed);
+        } else {
+            this.rejectedConnectionLogSkipCount.incrementAndGet();
         }
     }
 

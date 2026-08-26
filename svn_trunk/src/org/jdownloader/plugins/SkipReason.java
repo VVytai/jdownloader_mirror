@@ -2,13 +2,13 @@ package org.jdownloader.plugins;
 
 import javax.swing.Icon;
 
-import jd.plugins.DownloadLink;
-
 import org.appwork.swing.components.ExtMergedIcon;
 import org.jdownloader.gui.IconKey;
 import org.jdownloader.images.AbstractIcon;
 import org.jdownloader.images.NewTheme;
 import org.jdownloader.translate._JDT;
+
+import jd.plugins.DownloadLink;
 
 public enum SkipReason {
     CONNECTION_UNAVAILABLE(_JDT.T.DownloadLink_setSkipped_statusmessage_noconnectionavailable(), IconKey.ICON_ERROR),
@@ -39,15 +39,16 @@ public enum SkipReason {
     public Icon getIcon(Object requestor, int size) {
         final String id = "Skipped" + iconKey + "-" + size;
         Icon ret = NewTheme.I().getCached(id);
-        // if (ret != null) return ret;
-        if (iconKey == null) {
-            ret = new AbstractIcon(IconKey.ICON_SKIPPED, size);
-            NewTheme.I().cache(ret, id);
+        if (ret != null) {
             return ret;
         }
-        int main = (int) (size * 0.75d);
-        int badge = (int) (size * 0.75d);
-        ret = new ExtMergedIcon(new AbstractIcon(IconKey.ICON_SKIPPED, main), -1, -1).add(new AbstractIcon(iconKey, badge), size - badge, size - badge).crop(size, size);
+        if (iconKey == null) {
+            ret = new AbstractIcon(IconKey.ICON_SKIPPED, size);
+        } else {
+            final int main = (int) (size * 0.75d);
+            final int badge = (int) (size * 0.75d);
+            ret = new ExtMergedIcon(new AbstractIcon(IconKey.ICON_SKIPPED, main), -1, -1).add(new AbstractIcon(iconKey, badge), size - badge, size - badge).crop(size, size);
+        }
         NewTheme.I().cache(ret, id);
         return ret;
     }

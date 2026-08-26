@@ -35,6 +35,7 @@
 package org.appwork.utils.os.tests;
 
 import java.io.File;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
@@ -44,6 +45,7 @@ import org.appwork.processes.ProcessInfo;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
 import org.appwork.testframework.TestInterface;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.utils.Time;
@@ -67,6 +69,11 @@ import com.sun.jna.platform.win32.Advapi32Util.Account;
 public class TestWindowsUtils extends AWTest {
     private static final String TEST_DIR = System.getProperty("java.io.tmpdir") + "/WindowsUtilsTest";
     private File                testDir;
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
+    }
 
     /** Serializable task for runAsAdmin; must not capture outer test instance. */
     private static class ElevatedCheckTask implements ElevatedTestTask {

@@ -79,7 +79,6 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 
 import org.appwork.JNAHelper;
-import org.appwork.builddecision.BuildDecisionRequired;
 import org.appwork.exceptions.WTFException;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.resources.MultiResolutionImageHelper;
@@ -96,7 +95,6 @@ import org.appwork.utils.images.svg.SVGFactory;
 import org.appwork.utils.net.Base64OutputStream;
 import org.appwork.utils.os.CrossSystem;
 
-@BuildDecisionRequired(tags = { IconIO.SVG_JSVG, IconIO.SVG_SALAMANDER, IconIO.SVG_NONE }, imports = { IconIO.CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_WEISJ_JSVG_FACTORY, IconIO.CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_KIT_FOX_FACTORY, "" })
 public class IconIO {
     public static enum DataURLFormat {
         JPG,
@@ -198,12 +196,7 @@ public class IconIO {
     }
 
     @AWTestValidateClassReference
-    protected static final String                    CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_KIT_FOX_FACTORY    = "org.appwork.utils.images.svg.KitFoxFactory";
-    @AWTestValidateClassReference
     protected static final String                    CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_WEISJ_JSVG_FACTORY = "org.appwork.utils.images.svg.WeisjJSVGFactory";
-    public static final String                       SVG_NONE                                              = "SVG-NONE";
-    public static final String                       SVG_SALAMANDER                                        = "SVG-SALAMANDER";
-    public static final String                       SVG_JSVG                                              = "SVG-JSVG";
     public static final String                       SVG_FACTORY_KEY                                       = "SVG_FACTORY";
     private static final AtomicReference<SVGFactory> SVG_FACTORY                                           = new AtomicReference<SVGFactory>();
     private static Boolean                           ICO_SUPPORTED;
@@ -416,7 +409,7 @@ public class IconIO {
         if (fromSysProp != null && StringUtils.isEmpty(fromSysProp)) {
             return null;
         }
-        final List<String> clazzes = Arrays.asList(fromSysProp, CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_WEISJ_JSVG_FACTORY, CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_KIT_FOX_FACTORY);
+        final List<String> clazzes = Arrays.asList(fromSysProp, CLASS_ORG_APPWORK_UTILS_IMAGES_SVG_WEISJ_JSVG_FACTORY);
         for (final String clazz : clazzes) {
             if (StringUtils.isNotEmpty(clazz)) {
                 try {

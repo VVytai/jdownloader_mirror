@@ -2,23 +2,24 @@ package org.jdownloader.gui.views.downloads.columns;
 
 import javax.swing.JPopupMenu;
 
-import jd.controlling.packagecontroller.AbstractNode;
-import jd.plugins.DownloadLink;
-import jd.plugins.FilePackage;
-import jd.plugins.FilePackageView;
-
 import org.appwork.storage.config.JsonConfig;
 import org.appwork.swing.exttable.columns.ExtFileSizeColumn;
 import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SizeUnitInterface;
+
+import jd.controlling.packagecontroller.AbstractNode;
+import jd.plugins.DownloadLink;
+import jd.plugins.FilePackage;
+import jd.plugins.FilePackageView;
 
 public class RemainingColumn extends ExtFileSizeColumn<AbstractNode> {
     /**
      *
      */
-    private static final long serialVersionUID = 1L;
-    private final SIZEUNIT    maxSizeUnit;
+    private static final long       serialVersionUID = 1L;
+    private final SizeUnitInterface maxSizeUnit;
 
     public JPopupMenu createHeaderPopup() {
         return FileColumn.createColumnPopup(this, getMinWidth() == getMaxWidth() && getMaxWidth() > 0);
@@ -26,7 +27,7 @@ public class RemainingColumn extends ExtFileSizeColumn<AbstractNode> {
 
     public RemainingColumn() {
         super(_GUI.T.RemainingColumn_RemainingColumn());
-        maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
+        maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit().toNonNegativeUnit(_GUI.T.SizeColumn_getSizeString_zero());
     }
 
     @Override

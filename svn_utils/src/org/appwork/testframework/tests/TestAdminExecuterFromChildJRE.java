@@ -8,10 +8,14 @@
  * ==================================================================================================================================================== */
 package org.appwork.testframework.tests;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.JREExecuter;
 import org.appwork.testframework.JREExecuter.JreOptions;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ProcessOptions;
 import org.appwork.utils.JavaVersion;
@@ -29,6 +33,11 @@ import org.appwork.utils.processes.ProcessOutput;
 public class TestAdminExecuterFromChildJRE extends AWTest {
     public static void main(String[] args) {
         run();
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

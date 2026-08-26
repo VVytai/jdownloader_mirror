@@ -20,8 +20,6 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.nio.charset.Charset;
-
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.loggingv3.simple.SimpleLoggerFactory;
 import org.appwork.utils.Application;
 import org.appwork.utils.Exceptions;
@@ -76,7 +74,6 @@ public final class RunSerializedTaskMain {
         final ByteArrayOutputStream capturedOut = new ByteArrayOutputStream();
         final ByteArrayOutputStream capturedErr = new ByteArrayOutputStream();
         installStreamCapture(originalOut, originalErr, capturedOut, capturedErr);
-        BuildDecisions.setEnabled(false);
         if (!CrossSystem.isWindows()) {
             System.err.println("RunSerializedTaskMain is Windows-only");
             System.exit(1);

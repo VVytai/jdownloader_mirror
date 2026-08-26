@@ -9,11 +9,14 @@
 package org.appwork.testframework.tests;
 
 import java.io.Serializable;
+import java.util.EnumSet;
+import java.util.Set;
 
 import org.appwork.loggingv3.LogV3;
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.utils.os.CrossSystem;
@@ -33,6 +36,11 @@ public class TestRunAsAdminTask extends AWTest implements Serializable {
 
     public static void main(String[] args) {
         run();
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override

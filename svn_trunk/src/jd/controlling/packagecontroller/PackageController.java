@@ -576,12 +576,12 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
         }
 
         /** Copy constructor. */
-        public PackageSettings(final PackageSettings other) {
-            this.packageposition = other.packageposition;
-            this.mergePackageComments = other.mergePackageComments;
-            this.mergeSameNamedPackages = other.mergeSameNamedPackages;
-            this.expandPackage = other.expandPackage;
-            this.mergeSameNamedPackagesCaseInsensitive = other.mergeSameNamedPackagesCaseInsensitive;
+        public PackageSettings(final PackageSettings settings) {
+            this.packageposition = settings.packageposition;
+            this.mergePackageComments = settings.mergePackageComments;
+            this.mergeSameNamedPackages = settings.mergeSameNamedPackages;
+            this.expandPackage = settings.expandPackage;
+            this.mergeSameNamedPackagesCaseInsensitive = settings.mergeSameNamedPackagesCaseInsensitive;
         }
 
         public int getPackagePosition() {
@@ -649,40 +649,50 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
         }
     }
 
-    public void merge(final PackageType dest, final List<ChildType> srcLinks, final List<PackageType> srcPkgs, final PackageSettings mergesettings) {
-        if (mergesettings == null) {
+    /**
+     * Moves the given links and/or the children of the given packages into the destination package {@code dest}. </br>
+     * This is the "move into a (possibly freshly created) target package" operation (optionally at a given position and with merged package
+     * comments). If {@link PackageSettings#getMergeSameNamedPackages()} is set, the destination is additionally folded into an already
+     * existing same named package afterwards (see {@link #mergeSameNamedPackagesPass}). </br>
+     * For pure same-name consolidation without a move target use {@link #consolidateSameNamedPackages(List, PackageSettings)}.
+     *
+     * @param srcLinks
+     *            links to move into dest, or null.
+     * @param srcPkgs
+     *            packages whose children are moved into dest, or null.
+     * @param dest
+     *            the destination package the items are moved into; must not be null.
+     * @param settings
+     *            settings controlling target position, comment merging, expand state and the optional same-name follow-up pass.
+     */
+    public void moveIntoPackage(final List<ChildType> srcLinks, final List<PackageType> srcPkgs, final PackageType dest, final PackageSettings settings) {
+        if (settings == null) {
             /* Developer mistake */
             throw new IllegalArgumentException();
         }
-        if (mergesettings.getMergeSameNamedPackages()) {
-            if (dest == null && srcLinks == null && srcPkgs != null && srcPkgs.isEmpty()) {
-                /* Selection is empty -> User has triggered "Merge same named packages" action without selection -> Nothing for us to-do. */
-                return;
-            }
-        } else {
-            if (dest == null) {
-                return;
-            } else if (srcLinks == null && srcPkgs == null) {
-                return;
-            }
+        if (dest == null) {
+            /* Developer mistake: this operation always moves into a destination package. */
+            throw new IllegalArgumentException("dest is null");
+        }
+        if (srcLinks == null && srcPkgs == null && !settings.getMergeSameNamedPackages()) {
+            /* Nothing to move and no same-name follow-up requested -> Nothing to-do. */
+            return;
         }
         QUEUE.add(new QueueAction<Void, RuntimeException>() {
             @Override
             protected Void run() throws RuntimeException {
-                int positionMerge = mergesettings.getPackagePosition();
-                if (dest != null) {
-                    /* Prepare destination-package */
-                    dest.setExpanded(mergesettings.getExpandPackage());
-                    if (srcPkgs != null && mergesettings.getMergePackageComments()) {
-                        /* There are multiple source packages and comments shall be merged */
-                        final List<PackageType> allPackages = new ArrayList<PackageType>();
-                        allPackages.add(dest);
-                        allPackages.addAll(srcPkgs);
-                        final String mergedComments = mergePackageComments(allPackages);
-                        if (!StringUtils.isEmpty(mergedComments)) {
-                            /* Set new comment */
-                            dest.setComment(mergedComments);
-                        }
+                int positionMerge = settings.getPackagePosition();
+                /* Prepare destination-package */
+                dest.setExpanded(settings.getExpandPackage());
+                if (srcPkgs != null && settings.getMergePackageComments()) {
+                    /* There are multiple source packages and comments shall be merged */
+                    final List<PackageType> allPackages = new ArrayList<PackageType>();
+                    allPackages.add(dest);
+                    allPackages.addAll(srcPkgs);
+                    final String mergedComments = mergePackageComments(allPackages);
+                    if (!StringUtils.isEmpty(mergedComments)) {
+                        /* Set new comment */
+                        dest.setComment(mergedComments);
                     }
                 }
                 if (srcLinks != null) {
@@ -704,8 +714,8 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
                         }
                     }
                 }
-                if (mergesettings.getMergeSameNamedPackages()) {
-                    mergeSameNamedPackagesPass(dest, srcPkgs, mergesettings);
+                if (settings.getMergeSameNamedPackages()) {
+                    mergeSameNamedPackagesPass(srcPkgs, dest, settings);
                 }
                 return null;
             }
@@ -713,40 +723,71 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
     }
 
     /**
-     * Same-name merging step of {@link #merge} (only invoked when {@link PackageSettings#getMergeSameNamedPackages()} is set). Consolidates
-     * packages that share the same name and download path (grouping is done by {@link #getPackagesWithSameName}). By the time this runs,
-     * merge() has already moved srcLinks/srcPkgs into dest, so dest already carries the merged content and is part of the controller. </br>
-     * Runs on the QUEUE thread (called from within merge's QueueAction). It re-enters merge(...) for the actual moving; since QUEUE.add
-     * from the queue thread runs synchronously, this does not deadlock. The recursive calls receive a copy of the settings with
-     * mergeSameNamedPackages disabled to prevent an endless loop.
+     * Consolidates all same named (and same download path) packages within the given scope, merging each group of duplicates into its first
+     * (topmost) member. </br>
+     * This is the standalone "merge same named packages" action; it moves nothing on its own beyond folding duplicates together. To move
+     * items into a specific target package use {@link #moveIntoPackage(List, List, PackageType, PackageSettings)}.
      *
+     * @param scope
+     *            the packages whose duplicates should be consolidated, or null to consolidate duplicates across the whole controller.
+     * @param settings
+     *            merge settings; for this operation only the case-insensitivity flag affects the name matching.
+     */
+    public void consolidateSameNamedPackages(final List<PackageType> scope, final PackageSettings settings) {
+        if (settings == null) {
+            /* Developer mistake */
+            throw new IllegalArgumentException();
+        }
+        if (scope != null && scope.isEmpty()) {
+            /* Selection is empty -> User has triggered "Merge same named packages" action without selection -> Nothing for us to-do. */
+            return;
+        }
+        QUEUE.add(new QueueAction<Void, RuntimeException>() {
+            @Override
+            protected Void run() throws RuntimeException {
+                mergeSameNamedPackagesPass(scope, null, settings);
+                return null;
+            }
+        });
+    }
+
+    /**
+     * Same-name merging step (invoked by {@link #moveIntoPackage} when {@link PackageSettings#getMergeSameNamedPackages()} is set, and by
+     * {@link #consolidateSameNamedPackages}). Consolidates packages that share the same name and download path (grouping is done by
+     * {@link #getPackagesWithSameName}). When called from {@link #moveIntoPackage}, that method has already moved srcLinks/srcPkgs into dest,
+     * so dest already carries the merged content and is part of the controller. </br>
+     * Runs on the QUEUE thread (called from within the caller's QueueAction). It re-enters {@link #moveIntoPackage} for the actual moving;
+     * since QUEUE.add from the queue thread runs synchronously, this does not deadlock. The recursive calls receive a copy of the settings
+     * with mergeSameNamedPackages disabled to prevent an endless loop.
+     *
+     * @param srcPkgs
+     *            only used when dest == null: the selection whose duplicates should be consolidated, or null to consolidate duplicates
+     *            across the whole controller.
      * @param dest
      *            the merge destination, or null - this selects the mode: </br>
      *            <b>dest != null</b> ("fold into destination"): groups by dest's own name and folds the FIRST existing same named package
-     *            into dest, then stops - even if further same named packages exist, only that one is merged. Used by {@link #merge} when a
-     *            selection was merged into a (possibly freshly created) target package that should join an already existing package of the
+     *            into dest, then stops - even if further same named packages exist, only that one is merged. Used by {@link #moveIntoPackage}
+     *            when a selection was merged into a (possibly freshly created) target package that should join an already existing package of
+     *            the
      *            same name. Note: dest itself is part of its group, so a group of size 1 means dest has no same named partner. srcPkgs is
      *            NOT consulted in this mode. </br>
      *            <b>dest == null</b> ("consolidate"): groups the same named packages and merges each group into its first (topmost) member.
      *            The scope is given by srcPkgs.
-     * @param srcPkgs
-     *            only used when dest == null: the selection whose duplicates should be consolidated, or null to consolidate duplicates
-     *            across the whole controller.
-     * @param mergesettings
+     * @param settings
      *            merge settings; for this step only its case-insensitivity flag affects the name matching (mergeSameNamedPackages is
      *            disabled on the copy used for the recursive move calls).
      */
-    protected void mergeSameNamedPackagesPass(final PackageType dest, final List<PackageType> srcPkgs, final PackageSettings mergesettings) {
+    protected void mergeSameNamedPackagesPass(final List<PackageType> srcPkgs, final PackageType dest, final PackageSettings settings) {
         /* Build the groups of same named (and same download path) packages to consider. */
         final Map<String, List<PackageType>> dupes;
         if (dest != null) {
             /* Match against dest's own name; dest is already controlled, so its group also contains dest itself. */
             final List<PackageType> mergePackages = new ArrayList<PackageType>();
             mergePackages.add(dest);
-            dupes = getPackagesWithSameName(mergePackages, mergesettings);
+            dupes = getPackagesWithSameName(mergePackages, settings);
         } else {
             /* Consolidate within the given selection, or across the whole controller when srcPkgs is null. */
-            dupes = getPackagesWithSameName(srcPkgs, mergesettings);
+            dupes = getPackagesWithSameName(srcPkgs, settings);
         }
         if (dupes.isEmpty()) {
             /* Zero results -> Do nothing */
@@ -756,7 +797,7 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
          * Copy the settings and disable same-name merging for the recursive calls. This avoids an endless loop without mutating the
          * caller's settings object.
          */
-        final PackageSettings recursionSettings = new PackageSettings(mergesettings).setMergeSameNamedPackages(false);
+        final PackageSettings recursionSettings = new PackageSettings(settings).setMergeSameNamedPackages(false);
         final Iterator<Entry<String, List<PackageType>>> dupes_iterator = dupes.entrySet().iterator();
         while (dupes_iterator.hasNext()) {
             final Entry<String, List<PackageType>> entry = dupes_iterator.next();
@@ -787,13 +828,13 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
                 /* Fold that one existing package into dest ... */
                 thisdupes.clear();
                 thisdupes.add(firstForeignDupe);
-                merge(dest, null, thisdupes, recursionSettings);
+                moveIntoPackage(null, thisdupes, dest, recursionSettings);
                 /* ... and stop: in dest mode we merge into exactly one existing package. */
                 break;
             }
             /* No dest -> pick the first (topmost) package of the group as target and consolidate the rest into it. */
             final PackageType target = thisdupes.remove(0);
-            merge(target, null, thisdupes, recursionSettings);
+            moveIntoPackage(null, thisdupes, target, recursionSettings);
         }
     }
 
@@ -801,8 +842,8 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
      * Merges each of the freshly added packages into an existing same named package already controlled by this PackageController (if such a
      * package exists). </br>
      * Only the given packages are moved; pre-existing same named packages merely serve as merge targets and are never merged among each
-     * other. This is the "fold new packages into existing ones" behavior and differs from {@link #merge} with mergeSameNamedPackages=true,
-     * which consolidates ALL same named packages of a group into one. </br>
+     * other. This is the "fold new packages into existing ones" behavior and differs from
+     * {@link #consolidateSameNamedPackages(List, PackageSettings)}, which consolidates ALL same named packages of a group into one. </br>
      * Same-name matching uses the case-insensitivity default of {@link PackageSettings}.
      *
      * @param addedPackages
@@ -818,12 +859,12 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
         QUEUE.add(new QueueAction<Void, RuntimeException>() {
             @Override
             protected Void run() throws RuntimeException {
-                final PackageSettings mergeSettings = new PackageSettings();
-                /* We do the same-name matching ourselves here, so merge(...) must not run its own recursive same-name pass. */
-                mergeSettings.setMergeSameNamedPackages(false);
+                final PackageSettings settings = new PackageSettings();
+                /* We do the same-name matching ourselves here, so moveIntoPackage(...) must not run its own recursive same-name pass. */
+                settings.setMergeSameNamedPackages(false);
                 final Set<PackageType> added = new HashSet<PackageType>(addedPackages);
                 /* Groups are in list order (top to bottom) and contain both the freshly added and the pre-existing same named packages. */
-                final Map<String, List<PackageType>> sameNamed = getPackagesWithSameName(addedPackages, mergeSettings);
+                final Map<String, List<PackageType>> sameNamed = getPackagesWithSameName(addedPackages, settings);
                 final Iterator<Entry<String, List<PackageType>>> it = sameNamed.entrySet().iterator();
                 while (it.hasNext()) {
                     final List<PackageType> group = it.next().getValue();
@@ -846,7 +887,7 @@ public abstract class PackageController<PackageType extends AbstractPackageNode<
                         /* No pre-existing same named target, or nothing freshly added -> leave this group untouched. */
                         continue;
                     }
-                    merge(target, null, toMerge, mergeSettings);
+                    moveIntoPackage(null, toMerge, target, settings);
                 }
                 return null;
             }

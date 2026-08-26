@@ -45,10 +45,12 @@ import java.net.MalformedURLException;
 import java.nio.charset.Charset;
 import java.security.Permission;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.jar.JarInputStream;
 import java.util.zip.ZipEntry;
@@ -57,8 +59,6 @@ import java.util.zip.ZipInputStream;
 
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
-
-import org.appwork.builddecision.BuildDecisions;
 import org.appwork.exceptions.WTFException;
 import org.appwork.loggingv3.LogV3;
 import org.appwork.loggingv3.simple.LogRecord2;
@@ -129,6 +129,18 @@ public abstract class AWTest implements PostBuildTestInterface, TestInterface {
     @Override
     public boolean isSkipOnUnchangedDependencies() {
         return true;
+    }
+
+    /**
+     * Default: no tags. Override and return e.g. {@code EnumSet.of(TestTag.UAC)} when the test may need user attention; runners run those
+     * first.
+     *
+     * @see org.appwork.testframework.TestInterface#getTags()
+     * @see org.appwork.testframework.PostBuildTestInterface#getTags()
+     */
+    @Override
+    public Set<TestTag> getTags() {
+        return Collections.emptySet();
     }
 
     @Override
@@ -809,7 +821,6 @@ public abstract class AWTest implements PostBuildTestInterface, TestInterface {
     }
 
     public static void run() {
-        BuildDecisions.setEnabled(false);
         System.setProperty(AWTEST_IGNORE_MAINTENANCE, "true");
         IDETestRunner.run(getTestClass());
         LogV3.disableSysout();
@@ -1030,9 +1041,32 @@ public abstract class AWTest implements PostBuildTestInterface, TestInterface {
     }
 
     /**
+     * Explicit Eclipse workspace root for PostBuild runs outside the workspace (e.g. Temp/AppWorkBuilds). Set via PostBuildRunner
+     * {@code -workspace=} before any test calls {@link #getWorkspace()}.
+     */
+    private static File WORKSPACE_OVERRIDE = null;
+
+    /**
+     * Sets an explicit workspace root used by {@link #getWorkspace()} (PostBuild {@code -workspace=} parameter).
+     *
+     * @param workspace
+     *            workspace directory; must exist
+     */
+    public static void setWorkspace(final File workspace) {
+        if (workspace == null || !workspace.isDirectory()) {
+            throw new WTFException("Workspace override is not a directory: " + workspace);
+        }
+        WORKSPACE_OVERRIDE = workspace;
+    }
+
+    /**
      * @return
      */
     public static File getWorkspace() {
+        // PostBuild under Temp/AppWorkBuilds: walk from application root never finds Eclipse .metadata — use -workspace= instead.
+        if (WORKSPACE_OVERRIDE != null) {
+            return WORKSPACE_OVERRIDE;
+        }
         if (!Application.isJared(null)) {
             return IDEUtils.getWorkSpace();
         }
@@ -1045,6 +1079,6 @@ public abstract class AWTest implements PostBuildTestInterface, TestInterface {
             }
             here = here.getParentFile();
         }
-        throw new WTFException("Workspace not found. Check if " + Application.getResource("") + " is within the workspace");
+        throw new WTFException("Workspace not found. Pass -workspace=<eclipseWorkspaceRoot> to PostBuildRunner, or check if " + Application.getResource("") + " is within the workspace");
     }
 }

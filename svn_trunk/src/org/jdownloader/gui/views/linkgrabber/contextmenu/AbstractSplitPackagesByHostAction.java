@@ -192,9 +192,9 @@ public abstract class AbstractSplitPackagesByHostAction<PackageType extends Abst
                 final String nameFactory = JsonConfig.create(LinkgrabberSettings.class).getSplitPackageNameFactoryPattern();
                 final boolean merge = JsonConfig.create(LinkgrabberSettings.class).isSplitPackageMergeEnabled();
                 // Use PackageSettings properly
-                final PackageSettings ps = new PackageSettings();
-                ps.setExpandPackage(final_packageExpandState);
-                ps.setPackagePosition(index);
+                final PackageSettings settings = new PackageSettings();
+                settings.setExpandPackage(final_packageExpandState);
+                settings.setPackagePosition(index);
                 final Map<String, AbstractPackageNode> mergedPackages = new HashMap<String, AbstractPackageNode>();
                 final Iterator<Entry<AbstractPackageNode, Map<String, List<ChildrenType>>>> it = splitMap.entrySet().iterator();
                 while (it.hasNext()) {
@@ -241,16 +241,15 @@ public abstract class AbstractSplitPackagesByHostAction<PackageType extends Abst
                         }
                         /*
                          * Move only this host's links into the target package. We must NOT pass the source packages as srcPkgs here:
-                         * merge() would move ALL of their remaining children (i.e. links of other hosts) into this host's package,
-                         * defeating the split. Passing an empty (non-null) srcPkgs list would be even worse: together with
-                         * mergeSameNamedPackages=true merge() returns early and drops the links entirely. srcPkgs is therefore null; the
-                         * mergeSameNamedPackages flag still merges the new package with any already existing package of the same name.
+                         * moveIntoPackage() would move ALL of their remaining children (i.e. links of other hosts) into this host's package,
+                         * defeating the split. srcPkgs is therefore null; the mergeSameNamedPackages flag still merges the new package with
+                         * any already existing package of the same name.
                          */
-                        ps.setMergeSameNamedPackages(merge);
-                        controller.merge(newPkg, next2.getValue(), null, ps);
+                        settings.setMergeSameNamedPackages(merge);
+                        controller.moveIntoPackage(next2.getValue(), null, newPkg, settings);
                         // Increment index for next package
-                        if (ps.getPackagePosition() != Integer.MAX_VALUE) {
-                            ps.setPackagePosition(ps.getPackagePosition() + 1);
+                        if (settings.getPackagePosition() != Integer.MAX_VALUE) {
+                            settings.setPackagePosition(settings.getPackagePosition() + 1);
                         }
                     }
                 }

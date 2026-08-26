@@ -88,7 +88,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.components.SiteType.SiteTemplate;
 
-@HostPlugin(revision = "$Revision: 53185 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 3, names = {}, urls = {})
 public abstract class KernelVideoSharingComV2 extends PluginForHost {
     public KernelVideoSharingComV2(PluginWrapper wrapper) {
         super(wrapper);
@@ -1613,6 +1613,13 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
         }
     }
 
+    protected String decryptDirectURLIfRequired(final DownloadLink link, final Browser br, final String url) throws PluginException {
+        if (!this.isCryptedDirectURL(br, url)) {
+            return url;
+        }
+        return getDllinkCrypted(br, url);
+    }
+
     /** Finds direct download link to [video stream] file. */
     protected String getDllink(final DownloadLink link, final Browser br) throws PluginException, IOException {
         String dllink = null;
@@ -1658,16 +1665,10 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
                     throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
                 }
                 final String varNameVideoURL = varNameText.replace("_text", "");
-                String dllinkTmp = br.getRegex(varNameVideoURL + "\\s*:\\s*'((?:http|/|function/0/)[^<>\"']*?)'").getMatch(0);
-                if (this.isCryptedDirectURL(dllinkTmp)) {
-                    final String decryptedDllinkTmp = getDllinkCrypted(br, dllinkTmp);
-                    if (decryptedDllinkTmp == null) {
-                        logger.warning("Failed to decrypt URL: " + dllinkTmp);
-                        continue;
-                    }
-                    dllinkTmp = decryptedDllinkTmp;
-                } else if (!this.isValidDirectURL(dllinkTmp)) {
-                    logger.info("Skipping invalid directurl: " + dllinkTmp);
+                final String dlURL = br.getRegex(varNameVideoURL + "\\s*:\\s*'((?:http|/|function/0/)[^<>\"']*?)'").getMatch(0);
+                final String dllinkTmp = decryptDirectURLIfRequired(link, br, dlURL);
+                if (!this.isValidDirectURL(dllinkTmp)) {
+                    logger.info("Skipping invalid directurl: " + dlURL);
                     continue;
                 }
                 qualityMap.put(videoQuality, dllinkTmp);
@@ -1681,10 +1682,10 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
                 final String functions[] = br.getRegex("(function/0/https?://[A-Za-z0-9\\.\\-/]+/get_file/[^<>\"']*?)(?:\\&amp|'|\")").getColumn(0);
                 if (functions != null && functions.length > 0) {
                     logger.info("Found " + functions.length + " possible crypted downloadurls");
-                    for (final String cryptedDllinkTmp : functions) {
-                        final String dllinkTmp = getDllinkCrypted(br, cryptedDllinkTmp);
+                    for (final String function : functions) {
+                        final String dllinkTmp = decryptDirectURLIfRequired(link, br, function);
                         if (!isValidDirectURL(dllinkTmp)) {
-                            logger.warning("Failed to decrypt URL: " + cryptedDllinkTmp);
+                            logger.warning("Failed to decrypt URL: " + function);
                             continue;
                         }
                         if (addQualityURL(br, this.getDownloadLink(), qualityMap, dllinkTmp) == -1) {
@@ -1722,9 +1723,10 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
             final Set<String> dups = new HashSet<String>();
             final String[] dlURLs = br.getRegex("((?:https?://[A-Za-z0-9\\.\\-/]+)?/get_file/[^<>\"\\']*?)(?:'|\")").getColumn(0);
             int foundQualities = 0;
-            for (final String dllinkTmp : dlURLs) {
+            for (final String dlURL : dlURLs) {
+                final String dllinkTmp = decryptDirectURLIfRequired(link, br, dlURL);
                 if (!isValidDirectURL(dllinkTmp)) {
-                    logger.info("Skipping invalid video URL: " + dllinkTmp);
+                    logger.info("Skipping invalid video URL: " + dlURL);
                     continue;
                 } else if (!dups.add(dllinkTmp)) {
                     /* Skip duplicates */
@@ -1745,9 +1747,10 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
             /* This can fix mistakes/detect qualities missed in stage 1 */
             final String[] sources = br.getRegex("<source[^>]*?src=\"(https?://[^<>\"]*?)\"[^>]*?type=(\"|')video/[a-z0-9]+\\2[^>]+>").getColumn(-1);
             for (final String source : sources) {
-                final String dllinkTmp = new Regex(source, "src=\"(https?://[^<>\"]+)\"").getMatch(0);
+                final String dlURL = new Regex(source, "src=\"(https?://[^<>\"]+)\"").getMatch(0);
+                final String dllinkTmp = decryptDirectURLIfRequired(link, br, dlURL);
                 if (!isValidDirectURL(dllinkTmp)) {
-                    logger.info("Skipping invalid video URL: " + dllinkTmp);
+                    logger.info("Skipping invalid video URL: " + dlURL);
                     continue;
                 } else if (qualityMap.containsValue(dllinkTmp)) {
                     continue;
@@ -2179,7 +2182,7 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
         }
     }
 
-    protected boolean isCryptedDirectURL(final String url) {
+    protected boolean isCryptedDirectURL(final Browser br, final String url) {
         if (url == null) {
             return false;
         } else if (StringUtils.startsWithCaseInsensitive(url, "function/0/http") && this.isValidDirectURL(url.replaceFirst("(?i)function/0/", ""))) {
@@ -2189,7 +2192,7 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
         }
     }
 
-    private static String getDllinkCrypted(final Browser br, final String videoUrl) {
+    protected String getDllinkCrypted(final Browser br, final String videoUrl) {
         String dllink = null;
         // final String scriptUrl = br.getRegex("src=\"([^\"]+kt_player\\.js.*?)\"").getMatch(0);
         final String licenseCode = br.getRegex("license_code\\s*?:\\s*?\\'(.+?)\\'").getMatch(0);

@@ -44,8 +44,6 @@ import static com.sun.jna.platform.win32.WinNT.STANDARD_RIGHTS_READ;
 import static com.sun.jna.platform.win32.WinNT.TOKEN_DUPLICATE;
 import static com.sun.jna.platform.win32.WinNT.TOKEN_IMPERSONATE;
 import static com.sun.jna.platform.win32.WinNT.TOKEN_QUERY;
-import static com.sun.jna.platform.win32.WinUser.SW_HIDE;
-import static com.sun.jna.platform.win32.WinUser.SW_SHOW;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -67,8 +65,6 @@ import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
 import org.appwork.exceptions.WTFException;
-import org.appwork.experimental.windowsexecuter.ExecuteOptions;
-import org.appwork.experimental.windowsexecuter.WindowsExecuter;
 import org.appwork.jna.windows.Kernel32Ext;
 import org.appwork.jna.windows.Rm;
 import org.appwork.jna.windows.RmProcessInfo;
@@ -92,6 +88,8 @@ import org.appwork.utils.Joiner;
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.UniqueAlltimeID;
 import org.appwork.utils.locale._AWU;
+import org.appwork.utils.os.windows.execute.RunAsHelper;
+import org.appwork.utils.os.windows.execute.RunAsLaunchOptions;
 import org.appwork.utils.os.windows.jna.HandleScanExEntry32;
 import org.appwork.utils.os.windows.jna.HandleScanExEntry64;
 import org.appwork.utils.os.windows.jna.HandleScanLegacyEntry32;
@@ -114,7 +112,6 @@ import com.sun.jna.platform.win32.Advapi32Util;
 import com.sun.jna.platform.win32.Advapi32Util.Account;
 import com.sun.jna.platform.win32.Kernel32;
 import com.sun.jna.platform.win32.Kernel32Util;
-import com.sun.jna.platform.win32.Shell32;
 import com.sun.jna.platform.win32.Tlhelp32;
 import com.sun.jna.platform.win32.W32Errors;
 import com.sun.jna.platform.win32.Win32Exception;
@@ -1217,21 +1214,6 @@ public class WindowsUtils {
     }
 
     /**
-     * True if the given executable path refers to cmd.exe (used for /c parameter escaping).
-     */
-    private static boolean isCmdExe(String binary) {
-        if (binary == null) {
-            return false;
-        }
-        String name = binary;
-        int last = binary.lastIndexOf('\\');
-        if (last >= 0 && last + 1 < binary.length()) {
-            name = binary.substring(last + 1);
-        }
-        return "cmd.exe".equalsIgnoreCase(name) || "cmd".equalsIgnoreCase(name);
-    }
-
-    /**
      * Starts a process with elevated privileges (UAC prompt will be shown).
      *
      * @param command
@@ -1248,6 +1230,7 @@ public class WindowsUtils {
      *             if the command is invalid
      * @throws UnsupportedOperationException
      *             if not running on Windows
+     * @see org.appwork.utils.os.windows.execute.RunAsHelper#runUACElevated(String[], RunAsLaunchOptions)
      */
     public static JNAProcessInfo startElevatedProcess(String[] command, String workingDir, boolean showWindow) throws Win32Exception {
         if (!CrossSystem.isWindows()) {
@@ -1256,44 +1239,29 @@ public class WindowsUtils {
         if (command == null || command.length == 0) {
             throw new IllegalArgumentException("Command cannot be null or empty");
         }
-        // Convert command to absolute path if it's a file
-        // Build the final command
-        String binary = command[0];
-        String[] params = new String[command.length - 1];
-        System.arraycopy(command, 1, params, 0, params.length);
-        String finalCommand = ShellParser.createCommandLine(Style.WINDOWS, binary);
-        String args;
-        /*
-         * Special case for ShellExecuteEx only: cmd.exe /c <command> ShellParser.createCommandLine uses \" for embedded quotes
-         * (CreateProcess rule: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw ).
-         * When we use ShellExecuteEx with lpFile+lpParameters and "runas", the command line is not necessarily parsed the same way as by
-         * CreateProcess; using \" can lead to wrong parsing for the elevated cmd.exe. We escape inner double quotes as
-         * ^" (caret + quote): the elevated cmd receives ^" and interprets it as one literal " (cmd caret escape). The ""-only form can be
-         * mis-parsed (e.g. "C:\Program" when the path contains spaces). Do not move this into ShellParser.
-         */
-        if (isCmdExe(binary) && params.length == 2 && "/c".equals(params[0])) {
-            String cmdString = params[1];
-            args = "/c \"" + cmdString.replace("\"", "^\"") + "\"";
-        } else {
-            args = ShellParser.createCommandLine(Style.WINDOWS, params);
-        }
-        // Set up ShellExecuteEx parameters
-        Shell32.SHELLEXECUTEINFO sei = new Shell32.SHELLEXECUTEINFO();
-        sei.cbSize = sei.size();
-        sei.lpVerb = "runas"; // Request elevation
-        sei.lpFile = finalCommand;
-        sei.lpParameters = args;
-        sei.lpDirectory = workingDir;
-        sei.nShow = showWindow ? SW_SHOW : SW_HIDE;
-        sei.fMask = Shell32.SEE_MASK_NOCLOSEPROCESS; // Get process handle
-        // Execute the command
-        if (!Shell32.INSTANCE.ShellExecuteEx(sei)) {
+        try {
+            org.appwork.utils.os.windows.execute.RunAsLaunchOptions.Builder b = org.appwork.utils.os.windows.execute.RunAsLaunchOptions.builder().showWindow(showWindow).waitFor(false);
+            if (workingDir != null && workingDir.trim().length() > 0) {
+                b.workingDir(new File(workingDir));
+            }
+            org.appwork.utils.processes.ProcessOutput out = org.appwork.utils.os.windows.execute.RunAsHelper.runUACElevated(command, b.build());
+            org.appwork.processes.ProcessInfo info = out.getProcessInfo();
+            if (info instanceof JNAProcessInfo) {
+                return (JNAProcessInfo) info;
+            }
+            throw new IllegalStateException("runUACElevated did not return JNAProcessInfo (expected UAC ShellExecute path with waitFor=false)");
+        } catch (Win32Exception e) {
+            throw e;
+        } catch (Exception e) {
+            Throwable t = e;
+            while (t != null) {
+                if (t instanceof Win32Exception) {
+                    throw (Win32Exception) t;
+                }
+                t = t.getCause();
+            }
             throw new Win32Exception(Kernel32.INSTANCE.GetLastError());
         }
-        JNAProcessInfo info = new JNAProcessInfo(sei.hProcess);
-        info.setCommandLine(args.length() > 0 ? finalCommand + " " + args : finalCommand);
-        info.setWorkingDirectory(workingDir);
-        return info;
     }
 
     /**
@@ -2079,6 +2047,33 @@ public class WindowsUtils {
             System.out.println("ACL successfully applied to: " + path);
         } catch (Exception e) {
             throw new RuntimeException("Failed to set ACL", e);
+        }
+    }
+
+    /**
+     * Resets the DACL of a file or directory to inherit from its parent container. Equivalent to {@code icacls &lt;path&gt; /reset}:
+     * re-enables DACL inheritance ({@link WinNT#UNPROTECTED_DACL_SECURITY_INFORMATION}) and removes explicit ACEs so inherited ACEs from
+     * the parent apply.
+     *
+     * @param path
+     *            file or directory; no-op if it does not exist
+     */
+    public static void resetDaclToInherited(File path) {
+        try {
+            if (path == null) {
+                throw new IllegalArgumentException("Path may not be null!");
+            }
+            if (!path.exists()) {
+                return;
+            }
+            final ACL emptyAcl = new ACL();
+            if (!Advapi32.INSTANCE.InitializeAcl(emptyAcl, emptyAcl.size(), WinNT.ACL_REVISION)) {
+                throw new Win32Exception(Kernel32.INSTANCE.GetLastError());
+            }
+            final int flags = WinNT.DACL_SECURITY_INFORMATION | WinNT.UNPROTECTED_DACL_SECURITY_INFORMATION;
+            successOrException(Advapi32.INSTANCE.SetNamedSecurityInfo(path.getAbsolutePath(), AccCtrl.SE_OBJECT_TYPE.SE_FILE_OBJECT, flags, null, null, emptyAcl.getPointer(), null));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to reset DACL to inherited for: " + path, e);
         }
     }
 
@@ -2881,8 +2876,7 @@ public class WindowsUtils {
     }
 
     /**
-     * Closes native memory and always returns {@code null} so callers can compactly write
-     * {@code buffer = closeMemoryQuietly(buffer)}.
+     * Closes native memory and always returns {@code null} so callers can compactly write {@code buffer = closeMemoryQuietly(buffer)}.
      */
     private static Memory closeMemoryQuietly(Memory buffer) {
         if (buffer != null) {
@@ -3336,8 +3330,8 @@ public class WindowsUtils {
     }
 
     /**
-     * Returns the Terminal Services session ID of the current process. Used to pass {@code wtsSessionId} into {@link ExecuteOptions} when
-     * {@link org.appwork.experimental.windowsexecuter.WindowsExecuter#runAsNonElevatedUser(ExecuteOptions)} runs under LocalSystem but must
+     * Returns the Terminal Services session ID of the current process. Used to pass a WTS session id into
+     * {@link org.appwork.utils.os.windows.execute.RunAsHelper#runInSession} when the caller runs under LocalSystem but must
      * target the interactive user (e.g. RDP session instead of physical console).
      *
      * @return session id, or {@code -1} if {@link Kernel32Ext#ProcessIdToSessionId} fails
@@ -3351,8 +3345,8 @@ public class WindowsUtils {
     }
 
     /**
-     * Returns the primary user token for the given WTS session id (same as {@link #getActiveConsoleUserToken()} but for an explicit session).
-     * Requires LocalSystem or sufficient privilege. Caller must close the handle.
+     * Returns the primary user token for the given WTS session id (same as {@link #getActiveConsoleUserToken()} but for an explicit
+     * session). Requires LocalSystem or sufficient privilege. Caller must close the handle.
      *
      * @param sessionId
      *            valid session id (not {@code 0xFFFFFFFF})
@@ -3371,30 +3365,42 @@ public class WindowsUtils {
     }
 
     /**
-     * Fallback when scheduler-based run fails: run via WindowsExecuter.runAsNonElevatedUser.
-     * Used by runViaWindowsScheduler for both WTFException and RuntimeException.
+     * Fallback when scheduler-based run fails: launch via {@link RunAsHelper}. Used by {@link #runViaWindowsScheduler} for both
+     * WTFException and RuntimeException.
      */
-    private static void runViaWindowsExecuterFallback(String binary, String workingDir, String sid, String[] args, Throwable original) throws IOException, InterruptedException {
+    private static void runViaRunAsHelperFallback(String binary, String workingDir, String sid, String[] args, Throwable original) throws IOException, InterruptedException {
         String[] cmd = new String[args.length + 1];
         cmd[0] = binary;
         System.arraycopy(args, 0, cmd, 1, args.length);
-        ExecuteOptions.Builder opts = ExecuteOptions.builder().workingDir(workingDir != null ? new File(workingDir) : null).cmd(cmd).waitFor(false);
-        // Only set runInActiveSession when requested SID equals active console user (no SID passed to ExecuteOptions)
-        if (sid != null && sid.trim().length() > 0) {
-            try {
-                Account activeAccount = getActiveConsoleAccount();
-                if (activeAccount != null && sid.equals(activeAccount.sidString)) {
-                    opts.runInActiveSession(true);
-                } else {
-                    throw Exceptions.addSuppressed(original, new Exception("Cannot run  process as sid " + sid));
-                }
-            } catch (Throwable t) {
-                LogV3.log(t);
-                opts.runInActiveSession(true); // fallback to active session
-            }
+        RunAsLaunchOptions.Builder optsBuilder = RunAsLaunchOptions.builder().waitFor(false);
+        if (workingDir != null) {
+            optsBuilder.workingDir(new File(workingDir));
         }
+        final RunAsLaunchOptions opts = optsBuilder.build();
         try {
-            WindowsExecuter.runAsNonElevatedUser(opts.build());
+            if (sid != null && sid.trim().length() > 0) {
+                boolean useActiveConsole = false;
+                try {
+                    Account activeAccount = getActiveConsoleAccount();
+                    if (activeAccount != null && sid.equals(activeAccount.sidString)) {
+                        useActiveConsole = true;
+                    } else {
+                        throw Exceptions.addSuppressed(original, new Exception("Cannot run  process as sid " + sid));
+                    }
+                } catch (Throwable t) {
+                    LogV3.log(t);
+                    useActiveConsole = true; // fallback to active console session
+                }
+                if (useActiveConsole) {
+                    int sessionId = Kernel32Ext.INSTANCE.WTSGetActiveConsoleSessionId();
+                    if (sessionId < 0 || sessionId == (int) 0xFFFFFFFFL) {
+                        throw new IllegalStateException("No active console session (WTSGetActiveConsoleSessionId)");
+                    }
+                    RunAsHelper.runInSession(sessionId, cmd, opts);
+                }
+            } else {
+                RunAsHelper.runNonElevated(cmd, opts);
+            }
         } catch (Exception e1) {
             Throwable toThrow = Exceptions.addSuppressed(original, e1);
             if (toThrow instanceof RuntimeException) {
@@ -3433,9 +3439,9 @@ public class WindowsUtils {
         try {
             startNonElevatedViaSchedulerCLI(binary, workingDir, sid, args);
         } catch (WTFException e) {
-            runViaWindowsExecuterFallback(binary, workingDir, sid, args, e);
+            runViaRunAsHelperFallback(binary, workingDir, sid, args, e);
         } catch (RuntimeException e) {
-            runViaWindowsExecuterFallback(binary, workingDir, sid, args, e);
+            runViaRunAsHelperFallback(binary, workingDir, sid, args, e);
         }
     }
 

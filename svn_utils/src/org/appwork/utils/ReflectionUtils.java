@@ -36,6 +36,8 @@ package org.appwork.utils;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FileInputStream;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.GenericArrayType;
@@ -776,6 +778,40 @@ public class ReflectionUtils {
         } else {
             return (TT) raw.getAnnotation(class1);
         }
+    }
+
+    /**
+     * Collects annotations of the given types from {@code element}. Uses
+     * {@link AnnotatedElement#getAnnotationsByType(Class)}, which unwraps {@link java.lang.annotation.Repeatable} containers.
+     * Prefer this over {@link AnnotatedElement#getAnnotations()} when the sought types are known: {@code getAnnotations()} returns the
+     * container annotation instead of the repeated instances.
+     *
+     * @param element
+     *            method, field, class, …
+     * @param types
+     *            annotation types to collect (order preserved: all matches of type[0], then type[1], …)
+     * @return never null; empty if element/types is null/empty or nothing matched
+     */
+    @SafeVarargs
+    public static Annotation[] getAnnotationsByTypes(final AnnotatedElement element, final Class<? extends Annotation>... types) {
+        if (element == null || types == null || types.length == 0) {
+            return new Annotation[0];
+        }
+        ArrayList<Annotation> ret = null;
+        for (final Class<? extends Annotation> type : types) {
+            if (type == null) {
+                continue;
+            }
+            final Annotation[] found = element.getAnnotationsByType(type);
+            if (found.length == 0) {
+                continue;
+            }
+            if (ret == null) {
+                ret = new ArrayList<Annotation>(found.length);
+            }
+            Collections.addAll(ret, found);
+        }
+        return ret == null ? new Annotation[0] : ret.toArray(new Annotation[ret.size()]);
     }
 
     /**

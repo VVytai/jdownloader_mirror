@@ -9,16 +9,19 @@
 package org.appwork.testframework.tests;
 
 import java.io.Serializable;
+import java.util.EnumSet;
+import java.util.Set;
 
-import org.appwork.experimental.windowsexecuter.ExecuteOptions;
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.testframework.executer.ProcessOptions;
 import org.appwork.utils.os.CrossSystem;
 import org.appwork.utils.os.WindowsUtils;
+import org.appwork.utils.os.windows.execute.RunAsLaunchOptions;
 import org.appwork.utils.processes.ProcessOutput;
 
 /**
@@ -37,6 +40,11 @@ public class TestRunAsNonElevatedUserFromAdmin extends AWTest implements Seriali
     }
 
     @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
+    }
+
+    @Override
     public void runTest() throws Exception {
         if (!CrossSystem.isWindows()) {
             logInfoAnyway("TestRunAsNonElevatedUserFromAdmin: Windows only, skipped.");
@@ -49,34 +57,32 @@ public class TestRunAsNonElevatedUserFromAdmin extends AWTest implements Seriali
 
     /**
      * Inside a runAsLocalSystem task, runAsNonElevatedUser runs the command as non-SYSTEM. whoami /user must not show S-1-5-18. The WTS
-     * session id of the test process is captured before the helper runs as LocalSystem and passed as {@link ExecuteOptions#wtsSessionId} so
-     * the token is resolved for the same interactive session (e.g. RDP), not only the physical console. Also asserts that omitting
-     * {@code wtsSessionId} from LocalSystem causes {@link IllegalStateException} (automatic console session selection is disabled).
+     * session id of the test process is captured before the helper runs as LocalSystem and passed so the token is resolved for the same
+     * interactive session (e.g. RDP), not only the physical console. Also asserts that omitting {@code sessionId} from LocalSystem causes
+     * {@link IllegalStateException} (automatic console session selection is disabled).
      */
     private void testRunAsNonElevatedUserFromLocalSystemTask() throws Exception {
-        final int callerWtsSessionId = WindowsUtils.getCurrentProcessSessionId();
-        assertTrue(callerWtsSessionId >= 0, "Current process must have a WTS session id (ProcessIdToSessionId), got: " + callerWtsSessionId);
-        final String callerUserSid = WindowsUtils.getCurrentUserSID();
+        final int callerSessionId = WindowsUtils.getCurrentProcessSessionId();
+        assertTrue(callerSessionId >= 0, "Current process must have a WTS session id (ProcessIdToSessionId), got: " + callerSessionId);
         Integer result = AdminExecuter.runAsLocalSystem(new ElevatedTestTask() {
             private static final long serialVersionUID = 1L;
 
             @Override
             public Serializable run() throws Exception {
                 assertTrue(WindowsUtils.isRunningAsLocalSystem(), "This task must run as LocalSystem");
-                ExecuteOptions opts = ExecuteOptions.builder().cmd("cmd", "/c", "whoami", "/user").waitFor(true).wtsSessionId(String.valueOf(callerWtsSessionId)).sid(callerUserSid).build();
-                ProcessOutput out = AdminExecuter.runAsNonElevatedUser(opts);
+                String[] whoamiCmd = new String[] { "cmd", "/c", "whoami", "/user" };
+                ProcessOutput out = AdminExecuter.runAsNonElevatedUser(whoamiCmd, RunAsLaunchOptions.DEFAULT, Integer.valueOf(callerSessionId));
                 assertTrue(out != null, "ProcessOutput must not be null");
                 String stdout = out.getStdOutString();
                 assertTrue(stdout != null, "whoami /user must produce stdout");
                 assertTrue(!stdout.contains(SID_LOCAL_SYSTEM), "runAsNonElevatedUser must not run as SYSTEM (S-1-5-18), got: " + stdout);
                 try {
-                    ExecuteOptions withoutSession = ExecuteOptions.builder().cmd("cmd", "/c", "echo", "x").waitFor(true).build();
-                    AdminExecuter.runAsNonElevatedUser(withoutSession);
-                    assertTrue(false, "runAsNonElevatedUser from LocalSystem without wtsSessionId must throw IllegalStateException");
+                    AdminExecuter.runAsNonElevatedUser(new String[] { "cmd", "/c", "echo", "x" }, RunAsLaunchOptions.DEFAULT, null);
+                    assertTrue(false, "runAsNonElevatedUser from LocalSystem without sessionId must throw IllegalStateException");
                 } catch (IllegalStateException e) {
                     assertTrue(e.getMessage() != null && e.getMessage().length() > 0, "IllegalStateException must have a message");
                 }
-                logInfoAnyway("  OK: runAsNonElevatedUser from LocalSystem without wtsSessionId fails as required");
+                logInfoAnyway("  OK: runAsNonElevatedUser from LocalSystem without sessionId fails as required");
                 return Integer.valueOf(0);
             }
         }, TypeRef.INT, ProcessOptions.DEFAULT);
@@ -94,8 +100,7 @@ public class TestRunAsNonElevatedUserFromAdmin extends AWTest implements Seriali
             @Override
             public Serializable run() throws Exception {
                 assertTrue(WindowsUtils.isElevated(), "This task must run elevated");
-                ExecuteOptions opts = ExecuteOptions.builder().cmd("cmd", "/c", "net", "session").waitFor(true).build();
-                ProcessOutput out = AdminExecuter.runAsNonElevatedUser(opts);
+                ProcessOutput out = AdminExecuter.runAsNonElevatedUser(new String[] { "cmd", "/c", "net", "session" }, RunAsLaunchOptions.DEFAULT);
                 assertTrue(out != null, "ProcessOutput must not be null");
                 assertTrue(out.getExitCode() != 0, "net session must fail when run non-elevated (exitCode should be != 0), got: " + out.getExitCode());
                 return Integer.valueOf(0);

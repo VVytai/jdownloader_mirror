@@ -41,6 +41,7 @@ import org.jdownloader.plugins.controller.host.HostPluginController;
 import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
+import org.jdownloader.settings.GraphicalUserInterfaceSettings.SizeUnitInterface;
 
 import jd.controlling.AccountController;
 import jd.gui.swing.jdgui.BasicJDTable;
@@ -619,12 +620,12 @@ public class MultiHostAccountSettingsPanelBuilder {
                     return _GUI.T.premiumaccounttablemodel_column_trafficleft_unlimited();
                 } else {
                     /* Max traffic is given -> Display both traffic left and max */
-                    return _GUI.T.premiumaccounttablemodel_column_trafficleft_left_(getSizeString(Math.max(0, mhost.getTrafficLeft())), getSizeString(getMax(mhost)));
+                    return _GUI.T.premiumaccounttablemodel_column_trafficleft_left_(getSizeString(maxSizeUnit, mhost.getTrafficLeft()), getSizeString(maxSizeUnit.toNonNegativeUnit(), getMax(mhost)));
                 }
             }
 
-            private final String getSizeString(final long fileSize) {
-                return maxSizeUnit.formatValue(maxSizeUnit, formatter, fileSize);
+            private final String getSizeString(SizeUnitInterface maxSizeUnit, final long fileSize) {
+                return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
             }
 
             @Override
@@ -656,26 +657,25 @@ public class MultiHostAccountSettingsPanelBuilder {
 
     private ExtFileSizeColumn<MultiHostHost> createTrafficLeftColumn(final DecimalFormat formatter) {
         return new ExtFileSizeColumn<MultiHostHost>(_GUI.T.multihost_detailed_host_info_table_column_traffic_left()) {
-            private final SIZEUNIT maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
+            private final SizeUnitInterface maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
 
             @Override
             public String getStringValue(MultiHostHost mhost) {
                 if (mhost.isUnlimitedTraffic()) {
                     return _GUI.T.lit_unlimited();
                 } else {
-                    return getSizeString(Math.max(0, mhost.getTrafficLeft()));
+                    return getSizeString(getBytes(mhost));
                 }
             }
 
             @Override
             protected final String getSizeString(final long fileSize) {
-                return maxSizeUnit.formatValue(maxSizeUnit, formatter, fileSize);
+                return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
             }
 
             @Override
             protected long getBytes(MultiHostHost mhost) {
-                /* Do not allow for negative numbers since table progress would display this as unlimited. */
-                return Math.max(0, mhost.getTrafficLeft());
+                return mhost.getTrafficLeft();
             }
 
             @Override
@@ -692,20 +692,20 @@ public class MultiHostAccountSettingsPanelBuilder {
 
     private ExtFileSizeColumn<MultiHostHost> createTrafficMaxColumn(final DecimalFormat formatter) {
         return new ExtFileSizeColumn<MultiHostHost>(_GUI.T.multihost_detailed_host_info_table_column_traffic_max()) {
-            private final SIZEUNIT maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit();
+            private final SizeUnitInterface maxSizeUnit = JsonConfig.create(GraphicalUserInterfaceSettings.class).getMaxSizeUnit().toNonNegativeUnit();
 
             @Override
             public String getStringValue(MultiHostHost mhost) {
                 if (mhost.isUnlimitedTraffic()) {
                     return _GUI.T.lit_unlimited();
                 } else {
-                    return getSizeString(mhost.getTrafficMax());
+                    return getSizeString(getBytes(mhost));
                 }
             }
 
             @Override
             protected final String getSizeString(final long fileSize) {
-                return maxSizeUnit.formatValue(maxSizeUnit, formatter, fileSize);
+                return SIZEUNIT.formatValue(maxSizeUnit, formatter, fileSize);
             }
 
             @Override

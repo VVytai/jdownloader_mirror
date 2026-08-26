@@ -12,6 +12,7 @@
  * ==================================================================================================================================================== */
 package org.appwork.testframework;
 
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -70,6 +71,7 @@ public final class TestReportHtmlWriter {
         appendStyles(sb);
         sb.append("</head>\n<body>\n<div class=\"wrap\">\n");
         sb.append("<h1>Test Report</h1>\n");
+        appendLocalLinks(sb, report);
         sb.append("<div class=\"meta\">");
         sb.append("Runner: <strong>").append(escape(report.getRunnerLabel())).append("</strong>");
         if (StringUtils.isNotEmpty(report.getBuildId())) {
@@ -106,6 +108,37 @@ public final class TestReportHtmlWriter {
         sb.append("<div class=\"card ").append(cssClass).append("\"><strong>").append(count).append("</strong>").append(escape(label)).append("</div>\n");
     }
 
+    private static void appendLocalLinks(final StringBuilder sb, final TestRunReport report) {
+        final List<TestReportLocalLink> links = report.getLocalLinks();
+        if (links == null || links.isEmpty()) {
+            return;
+        }
+        final StringBuilder nav = new StringBuilder();
+        final StringBuilder paths = new StringBuilder();
+        boolean any = false;
+        for (final TestReportLocalLink link : links) {
+            if (link == null || StringUtils.isEmpty(link.getLabel()) || StringUtils.isEmpty(link.getPath())) {
+                continue;
+            }
+            final File file = new File(link.getPath());
+            final String href = file.toURI().toASCIIString();
+            final String css = file.exists() ? "path-ok" : "path-missing";
+            if (any) {
+                nav.append("<span class=\"sep\">&middot;</span>");
+            }
+            any = true;
+            nav.append("<a class=\"").append(css).append("\" href=\"").append(escape(href)).append("\" title=\"").append(escape(link.getPath())).append("\">");
+            nav.append(escape(link.getLabel())).append("</a>");
+            paths.append("<div class=\"").append(css).append("\"><span class=\"path-label\">").append(escape(link.getLabel())).append("</span> ");
+            paths.append("<a href=\"").append(escape(href)).append("\">").append(escape(link.getPath())).append("</a></div>\n");
+        }
+        if (!any) {
+            return;
+        }
+        sb.append("<nav class=\"local-links\" aria-label=\"Local paths\">").append(nav).append("</nav>\n");
+        sb.append("<div class=\"local-paths\">\n").append(paths).append("</div>\n");
+    }
+
     private static void appendClassRow(final StringBuilder sb, final TestClassReport cls) {
         sb.append("<tr><td class=\"class-name\">").append(escape(cls.getClassName())).append("</td>\n");
         sb.append("<td>").append(classStatusBadge(cls.getClassStatus())).append("</td>\n<td>");
@@ -135,6 +168,17 @@ public final class TestReportHtmlWriter {
         sb.append("body{font-family:Segoe UI,system-ui,sans-serif;margin:0;background:#f4f6f8;color:#1a1a1a;}\n");
         sb.append(".wrap{max-width:1100px;margin:0 auto;padding:24px;}\n");
         sb.append("h1{margin:0 0 8px;font-size:1.6rem;}\n");
+        sb.append(".local-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;margin:0 0 10px;font-size:.95rem;}\n");
+        sb.append(".local-links a{font-weight:600;text-decoration:none;padding:4px 10px;border-radius:6px;background:#e8eef6;color:#1565c0;}\n");
+        sb.append(".local-links a:hover{background:#d0e2f7;}\n");
+        sb.append(".local-links a.path-missing{background:#f0f0f0;color:#888;}\n");
+        sb.append(".local-links .sep{color:#bbb;margin:0 2px;}\n");
+        sb.append(".local-paths{background:#fff;border-radius:8px;padding:10px 14px;margin:0 0 16px;box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:.8rem;font-family:Consolas,monospace;}\n");
+        sb.append(".local-paths div{padding:3px 0;word-break:break-all;}\n");
+        sb.append(".local-paths .path-label{display:inline-block;min-width:7.5em;font-weight:600;font-family:Segoe UI,system-ui,sans-serif;color:#444;}\n");
+        sb.append(".local-paths a{color:#1565c0;text-decoration:none;}\n");
+        sb.append(".local-paths a:hover{text-decoration:underline;}\n");
+        sb.append(".local-paths .path-missing a,.local-paths .path-missing .path-label{color:#999;}\n");
         sb.append(".meta{color:#555;font-size:.9rem;margin-bottom:20px;}\n");
         sb.append(".summary{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px;}\n");
         sb.append(".card{background:#fff;border-radius:8px;padding:14px 18px;min-width:120px;box-shadow:0 1px 3px rgba(0,0,0,.08);}\n");

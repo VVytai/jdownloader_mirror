@@ -10,7 +10,9 @@ package org.appwork.testframework.tests;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.appwork.JNAHelper;
 import org.appwork.loggingv3.LogV3;
@@ -20,6 +22,7 @@ import org.appwork.processes.ProcessInfo;
 import org.appwork.storage.TypeRef;
 import org.appwork.testframework.AWTest;
 import org.appwork.testframework.TestDependency;
+import org.appwork.testframework.TestTag;
 import org.appwork.testframework.executer.AdminExecuter;
 import org.appwork.testframework.executer.ElevatedTestTask;
 import org.appwork.testframework.executer.ProcessOptions;
@@ -189,6 +192,11 @@ public class TestRunAsHelper extends AWTest {
     @Override
     public boolean isMaintenance() {
         return false;
+    }
+
+    @Override
+    public Set<TestTag> getTags() {
+        return EnumSet.of(TestTag.UAC);
     }
 
     @Override
@@ -816,7 +824,7 @@ public class TestRunAsHelper extends AWTest {
             fillSessionProbeViaRunInOwnerSession(r);
             InteractiveSessionOwner owner = null;
             try {
-                owner = RunAsHelper.resolveInteractiveOwnerForCurrentProcessStrict();
+                owner = RunAsHelper.resolveInteractiveOwnerForCurrentProcess();
                 if (owner != null) {
                     r.sessionOwnerRoamingAppData = RunAsHelper.getKnownFolderPath(owner.getUserTokenHandle(), KnownFolders.FOLDERID_RoamingAppData, ShlObj.KNOWN_FOLDER_FLAG.NONE.getFlag());
                 }
@@ -894,7 +902,7 @@ public class TestRunAsHelper extends AWTest {
             final OwnerSessionWtsProbeOutcome ret = new OwnerSessionWtsProbeOutcome();
             InteractiveSessionOwner owner = null;
             try {
-                owner = RunAsHelper.resolveInteractiveOwnerForCurrentProcessStrict();
+                owner = RunAsHelper.resolveInteractiveOwnerForCurrentProcess();
                 if (owner != null) {
                     ret.ownerSidInTask = owner.getOwnerSid();
                     ret.sessionOwnerRoamingAppData = RunAsHelper.getKnownFolderPath(owner.getUserTokenHandle(), KnownFolders.FOLDERID_RoamingAppData, ShlObj.KNOWN_FOLDER_FLAG.NONE.getFlag());

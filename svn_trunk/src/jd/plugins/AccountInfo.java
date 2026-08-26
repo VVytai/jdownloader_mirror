@@ -50,7 +50,7 @@ public class AccountInfo extends Property implements AccountTrafficView {
     private static final long   serialVersionUID           = 1825140346023286206L;
     private volatile long       account_validUntil         = -1;
     private volatile long       account_LastValidUntil     = -1;
-    private volatile long       account_trafficLeft        = -1;
+    private volatile Long       account_trafficLeft        = null;
     private volatile long       account_trafficMax         = -1;
     private long                account_filesNum           = -1;
     private long                account_premiumPoints      = -1;
@@ -163,7 +163,11 @@ public class AccountInfo extends Property implements AccountTrafficView {
      * @return
      */
     public long getTrafficLeft() {
-        return Math.max(0, account_trafficLeft);
+        final Long account_trafficLeft = this.account_trafficLeft;
+        if (account_trafficLeft == null) {
+            return 0;
+        }
+        return account_trafficLeft.longValue();
     }
 
     public long getTrafficMax() {
@@ -253,15 +257,15 @@ public class AccountInfo extends Property implements AccountTrafficView {
     }
 
     public void setTrafficLeft(long size) {
-        this.account_trafficLeft = Math.max(0, size);
+        this.account_trafficLeft = size;
     }
 
     public void setUnlimitedTraffic() {
-        account_trafficLeft = -1;
+        account_trafficLeft = null;
     }
 
     public boolean isUnlimitedTraffic() {
-        return account_trafficLeft == -1;
+        return account_trafficLeft == null;
     }
 
     public void setTrafficLeft(final String freeTraffic) {

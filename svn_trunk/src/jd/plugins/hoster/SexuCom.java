@@ -18,7 +18,9 @@ package jd.plugins.hoster;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
+import org.appwork.storage.TypeRef;
 import org.appwork.utils.StringUtils;
 import org.jdownloader.plugins.controller.LazyPlugin;
 import org.jdownloader.scripting.JavaScriptEngineFactory;
@@ -35,7 +37,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 48056 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53220 $", interfaceVersion = 3, names = {}, urls = {})
 public class SexuCom extends PluginForHost {
     public SexuCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -65,10 +67,12 @@ public class SexuCom extends PluginForHost {
         return buildAnnotationUrls(getPluginDomains());
     }
 
+    private static final Pattern PATTERN_FILE = Pattern.compile("/(\\d+)/");
+
     public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
         final List<String> ret = new ArrayList<String>();
         for (final String[] domains : pluginDomains) {
-            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/(\\d+)/");
+            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + PATTERN_FILE.pattern());
         }
         return ret.toArray(new String[0]);
     }
@@ -83,13 +87,17 @@ public class SexuCom extends PluginForHost {
     /* Connection stuff */
     private static final boolean free_resume       = true;
     private static final int     free_maxchunks    = 0;
-    private static final int     free_maxdownloads = -1;
     private String               dllink            = null;
     private boolean              server_issues     = false;
 
     @Override
     public String getAGBLink() {
-        return "http://sexu.com/terms";
+        return "http://" + getHost() + "/terms";
+    }
+
+    @Override
+    protected String getDefaultFileName(DownloadLink link) {
+        return this.getFID(link) + ".mp4";
     }
 
     @Override
@@ -103,7 +111,7 @@ public class SexuCom extends PluginForHost {
     }
 
     private String getFID(final DownloadLink link) {
-        return new Regex(link.getPluginPatternMatcher(), this.getSupportedLinks()).getMatch(0);
+        return new Regex(link.getPluginPatternMatcher(), PATTERN_FILE).getMatch(0);
     }
 
     /* Official downloadlink is available but it only leads to the worst quality possible e.g. 240p. */
@@ -111,51 +119,49 @@ public class SexuCom extends PluginForHost {
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws Exception {
         dllink = null;
-        server_issues = false;
-        final String fid = getFID(link);
-        if (!link.isNameSet()) {
-            link.setName(fid + ".mp4");
-        }
         this.setBrowserExclusive();
         br.setFollowRedirects(true);
         br.getPage(link.getPluginPatternMatcher());
         if (br.containsHTML("class\\s*=\\s*\"container page404\"|>\\s*This video was deleted\\s*<") || br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         } else if (!this.canHandle(br.getURL())) {
-            /* E.g. redirect to mainpage */
+            /* E.g. redirect to main page */
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         final String playerSettingsString = br.getRegex("var\\s*playerSettings\\s*=\\s*(\\{.*?\\})\\s*;\\s*</script").getMatch(0);
-        if (playerSettingsString == null) {
-            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-        }
-        final Map<String, Object> playerSettings = JavaScriptEngineFactory.jsonToJavaMap(playerSettingsString);
-        final Map<String, Object> entries = (Map<String, Object>) JavaScriptEngineFactory.walkJson(playerSettings, "clip");
-        dllink = (String) entries.get("downloadUrl");
-        if (dllink == null) {
-            dllink = br.getRegex("<meta property=\"og:video:url\" content=\"([^<>\"]+)\" />").getMatch(0);
+        if (playerSettingsString != null) {
+            /* Old way */
+            final Map<String, Object> playerSettings = JavaScriptEngineFactory.jsonToJavaMap(playerSettingsString);
+            final Map<String, Object> entries = (Map<String, Object>) JavaScriptEngineFactory.walkJson(playerSettings, "clip");
+            dllink = (String) entries.get("downloadUrl");
             if (dllink == null) {
-                final List<Object> sources = (List<Object>) entries.get("sources");
-                if (sources != null) {
-                    /* Find best quality */
-                    boolean done = false;
-                    final String[] qualities = { "1080p", "720p", "480p", "360p", "320p", "240p" };
-                    for (final String quality : qualities) {
-                        for (final Object qualinfo : sources) {
-                            final Map<String, Object> qual_info = (Map<String, Object>) qualinfo;
-                            final String currquality = (String) qual_info.get("quality");
-                            if (currquality.contains(quality)) {
-                                dllink = (String) qual_info.get("src");
-                                done = true;
-                                break;
+                dllink = br.getRegex("<meta property=\"og:video:url\" content=\"([^<>\"]+)\" />").getMatch(0);
+                if (dllink == null) {
+                    final List<Object> sources = (List<Object>) entries.get("sources");
+                    if (sources != null) {
+                        /* Find best quality */
+                        final String[] qualities = { "1080p", "720p", "480p", "360p", "320p", "240p" };
+                        find_best_quality: for (final String quality : qualities) {
+                            for (final Object qualinfo : sources) {
+                                final Map<String, Object> qual_info = (Map<String, Object>) qualinfo;
+                                final String currquality = (String) qual_info.get("quality");
+                                if (currquality.contains(quality)) {
+                                    dllink = (String) qual_info.get("src");
+                                    break find_best_quality;
+                                }
                             }
-                        }
-                        if (done) {
-                            break;
                         }
                     }
                 }
             }
+        }
+        if (StringUtils.isEmpty(dllink)) {
+            /* 2026-08-25: New way */
+            final Browser brc = br.cloneBrowser();
+            brc.getHeaders().put("X-Requested-With", "XMLHttpRequest");
+            brc.postPage("/api/video-info", "videoId=" + this.getFID(link));
+            final Map<String, Object> entries = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
+            dllink = entries.get("downloadUrl").toString();
         }
         String filename = br.getRegex("<title>\\s*([^<>\"]*?)\\s*</title>").getMatch(0);
         if (filename == null) {
@@ -218,18 +224,6 @@ public class SexuCom extends PluginForHost {
 
     @Override
     public int getMaxSimultanFreeDownloadNum() {
-        return free_maxdownloads;
-    }
-
-    @Override
-    public void reset() {
-    }
-
-    @Override
-    public void resetPluginGlobals() {
-    }
-
-    @Override
-    public void resetDownloadlink(DownloadLink link) {
+        return Integer.MAX_VALUE;
     }
 }
