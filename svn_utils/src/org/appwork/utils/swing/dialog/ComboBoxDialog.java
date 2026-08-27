@@ -72,7 +72,7 @@ public class ComboBoxDialog extends AbstractDialog<Integer> implements ComboBoxD
      */
     private final Object[]   options;
     /**
-     * Listrenderer to render the optionobjects
+     * Listrenderer to render the option objects
      */
     private ListCellRenderer renderer;
 
@@ -180,6 +180,15 @@ public class ComboBoxDialog extends AbstractDialog<Integer> implements ComboBoxD
     public Integer getReturnIndex() {
         if ((getReturnmask() & Dialog.RETURN_OK) == 0) {
             return Integer.valueOf(-1);
+        }
+        // box's model may have been reordered (eg. by a search/filter combobox), so the selected item's
+        // position inside box no longer matches its position inside the original options array.
+        // resolve by identity against options instead of trusting box.getSelectedIndex().
+        final Object selected = box.getSelectedItem();
+        for (int i = 0; i < options.length; i++) {
+            if (options[i] == selected) {
+                return Integer.valueOf(i);
+            }
         }
         return Integer.valueOf(box.getSelectedIndex());
     }

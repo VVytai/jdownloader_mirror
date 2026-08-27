@@ -21,10 +21,13 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import org.appwork.utils.StringUtils;
+import org.jdownloader.captcha.v2.challenge.cloudflareturnstile.CaptchaHelperHostPluginCloudflareTurnstile;
 
 import jd.PluginWrapper;
 import jd.http.Browser;
+import jd.nutils.encoding.Encoding;
 import jd.parser.Regex;
+import jd.parser.html.Form;
 import jd.plugins.Account;
 import jd.plugins.DownloadLink;
 import jd.plugins.DownloadLink.AvailableStatus;
@@ -36,7 +39,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.decrypter.VimmNetCrawler;
 
-@HostPlugin(revision = "$Revision: 50648 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53254 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { VimmNetCrawler.class })
 public class VimmNet extends PluginForHost {
     public VimmNet(PluginWrapper wrapper) {
@@ -106,16 +109,38 @@ public class VimmNet extends PluginForHost {
     public static final String  PROPERTY_FORMAT_ID          = "format_id";
     public static final String  PROPERTY_FORMAT             = "format";
     public static final String  PROPERTY_PRE_GIVEN_FILENAME = "pre_given_filename";
+    public static final String  PROPERTY_PHPSESSID          = "phpsessid";
+    public static final String  COOKIE_PHPSESSID            = "PHPSESSID";
     private static final String EXT_DEFAULT                 = ".7z";
 
     @Override
-    public AvailableStatus requestFileInformation(final DownloadLink link) throws IOException, PluginException {
+    public AvailableStatus requestFileInformation(final DownloadLink link) throws IOException, PluginException, InterruptedException {
         if (!link.isNameSet()) {
             /* Fallback */
             link.setName(this.getLinkID(link) + EXT_DEFAULT);
         }
         this.setBrowserExclusive();
+        /**
+         * Re-use PHPSESSID cookie which the crawler obtained after solving a captcha. </br>
+         * This can prevent the need for solving another captcha here.
+         */
+        final String phpsessid = link.getStringProperty(PROPERTY_PHPSESSID);
+        if (phpsessid != null) {
+            br.setCookie(getHost(), COOKIE_PHPSESSID, phpsessid);
+        }
         br.getPage(link.getPluginPatternMatcher());
+        /* Captcha form may come along with http response 404 so first handle captcha, then check for offline */
+        final Form captchaform = br.getFormbyProperty("id", "turnstile-form");
+        if (captchaform != null) {
+            final String cfTurnstileResponse = new CaptchaHelperHostPluginCloudflareTurnstile(this, br).getToken();
+            captchaform.put("cf-turnstile-response", Encoding.urlEncode(cfTurnstileResponse));
+            br.submitForm(captchaform);
+            /* Store new PHPSESSID cookie we got after solving the captcha so it can be re-used next time. */
+            final String newPhpsessid = br.getCookie(getHost(), COOKIE_PHPSESSID);
+            if (newPhpsessid != null) {
+                link.setProperty(PROPERTY_PHPSESSID, newPhpsessid);
+            }
+        }
         if (br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }

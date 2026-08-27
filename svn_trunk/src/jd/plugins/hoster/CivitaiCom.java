@@ -51,7 +51,7 @@ import jd.plugins.Plugin;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53159 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53257 $", interfaceVersion = 3, names = {}, urls = {})
 public class CivitaiCom extends PluginForHost {
     public CivitaiCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -120,6 +120,10 @@ public class CivitaiCom extends PluginForHost {
         }
     }
 
+    private String getApiBase() {
+        return "https://" + getHost() + "/api/v1";
+    }
+
     private String getContentURL(final DownloadLink link) {
         /* 2026-07-29: Temp workaround to avoid Cloudflare problems, CF seems to be configured less aggressive for the .com domain. */
         return link.getPluginPatternMatcher().replace("civitai.red/", "civitai.com/");
@@ -185,10 +189,27 @@ public class CivitaiCom extends PluginForHost {
                     throw new PluginException(LinkStatus.ERROR_HOSTER_TEMPORARILY_UNAVAILABLE, "Error 503 service unavailable");
                 }
                 final String json = br.getRegex("type\\s*=\\s*\"application/json\"[^>]*>(\\{\"props.*?)</script>").getMatch(0);
+                if (json == null) {
+                    /* Embedded JSON not found, e.g. page structure changed or anti-bot page. */
+                    throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT, "Failed to find embedded JSON");
+                }
                 final Map<String, Object> entries = restoreFromString(json, TypeRef.MAP);
-                final Map<String, Object> imagemap = (Map<String, Object>) JavaScriptEngineFactory.walkJson(entries, "props/pageProps/trpcState/json/queries/{0}/state/data");
+                /*
+                 * Find the SSR-prefetched ["image","get"] query. When the image is online, the server prefetches it into the tRPC
+                 * state; when it is offline/removed, that query is absent (only auxiliary queries such as ["hiddenPreferences",
+                 * "getHidden"] remain). Do not rely on a fixed query index - the image query is not always first.
+                 */
+                final List<Map<String, Object>> queries = (List<Map<String, Object>>) JavaScriptEngineFactory.walkJson(entries, "props/pageProps/trpcState/json/queries");
+                Map<String, Object> imagemap = null;
+                for (final Map<String, Object> query : queries) {
+                    final List<Object> queryName = (List<Object>) ((List<Object>) query.get("queryKey")).get(0);
+                    if (queryName.contains("image") && queryName.contains("get")) {
+                        imagemap = (Map<String, Object>) JavaScriptEngineFactory.walkJson(query, "state/data");
+                        break;
+                    }
+                }
                 if (imagemap == null) {
-                    /* Invalid link e.g. https://civitai.com/images/1234567 */
+                    /* No ["image","get"] query present -> image is offline. */
                     throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
                 }
                 final Map<String, Object> metadata = (Map<String, Object>) imagemap.get("metadata");
@@ -287,14 +308,8 @@ public class CivitaiCom extends PluginForHost {
         }
         this.login(account);
         /* GET /api/v1/images?imageId=<id> — Authorization header already set by caller via login() */
-        br.getPage("https://" + getHost() + "/api/v1/images?imageId=" + imageID);
-        if (br.getHttpConnection().getResponseCode() == 404) {
-            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
-        }
-        final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
-        if ("bad_auth_token".equals(response.get("code")) || "401".equals(StringUtils.valueOfOrNull(response.get("status")))) {
-            throw new AccountInvalidException("Auth token invalid");
-        }
+        br.getPage(getApiBase() + "/images?imageId=" + imageID);
+        final Map<String, Object> response = checkErrorsAPI(br, true);
         final List<Object> items = (List<Object>) response.get("items");
         if (items == null || items.isEmpty()) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
@@ -387,15 +402,9 @@ public class CivitaiCom extends PluginForHost {
             return;
         }
         br.followConnection(true);
-        if (StringUtils.containsIgnoreCase(con.getContentType(), "application/json")) {
-            final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
-            if ("bad_auth_token".equals(response.get("code")) || "401".equals(StringUtils.valueOfOrNull(response.get("status")))) {
-                throw new AccountInvalidException("Auth token invalid");
-            }
-        }
-        if (br.getHttpConnection().getResponseCode() == 404) {
-            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
-        } else if (con.getURL().toExternalForm().matches("https?://[^/]+/login.*")) {
+        /* Centralized API JSON parsing + error handling (auth errors, 404, 429, 500, ...). Body may be non-JSON here. */
+        checkErrorsAPI(br, false);
+        if (con.getURL().toExternalForm().matches("https?://[^/]+/login.*")) {
             throw new AccountRequiredException("Free account required to download this file");
         }
         throwConnectionExceptions(br, con);
@@ -426,18 +435,69 @@ public class CivitaiCom extends PluginForHost {
         }
     }
 
+    /**
+     * Parses the JSON body of a Civitai API response and throws on documented API errors. <br>
+     * This centralizes all API JSON parsing and error handling. <br>
+     * See: https://developer.civitai.com/site/guide/errors
+     *
+     * @param br
+     *            Browser holding the API response to evaluate.
+     * @param jsonExpected
+     *            true if the response body must be valid JSON (pure API endpoints); in that case an unparseable body throws.
+     * @return the parsed JSON map, or null if the response body was not valid JSON and jsonExpected is false.
+     */
+    private Map<String, Object> checkErrorsAPI(final Browser br, final boolean jsonExpected) throws PluginException {
+        Map<String, Object> entries = null;
+        try {
+            entries = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
+        } catch (final Exception ignore) {
+            /* Response body is not (valid) JSON, e.g. an HTML error page or binary content. */
+        }
+        if (entries == null && jsonExpected) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT, "Invalid API response");
+        }
+        if (entries != null) {
+            /*
+             * Auth errors can appear in the JSON body independent of the HTTP status code. The "code" field is used by both the direct
+             * API ("bad_auth_token") and the tRPC layer ("UNAUTHORIZED"); the "error"/"status" fields are used by other endpoints (e.g.
+             * /api/v1/me).
+             */
+            final String code = StringUtils.valueOfOrNull(entries.get("code"));
+            final String error = StringUtils.valueOfOrNull(entries.get("error"));
+            final String status = StringUtils.valueOfOrNull(entries.get("status"));
+            if ("banned".equalsIgnoreCase(status)) {
+                throw new AccountInvalidException("Account banned");
+            } else if ("bad_auth_token".equalsIgnoreCase(code) || "UNAUTHORIZED".equalsIgnoreCase(code) || "Unauthorized".equalsIgnoreCase(error) || "401".equals(status)) {
+                throw new AccountInvalidException("Invalid API key / auth token");
+            }
+        }
+        /* Check documented HTTP status codes, see errors table in the API docs. */
+        final int responsecode = br.getHttpConnection().getResponseCode();
+        switch (responsecode) {
+        case 401:
+            throw new AccountInvalidException("HTTP 401 unauthorized");
+        case 403:
+            /* Valid credentials but insufficient permissions for this specific resource -> do not disable the account. */
+            throw new PluginException(LinkStatus.ERROR_FATAL, "HTTP 403 forbidden - insufficient permissions");
+        case 404:
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+        case 429:
+            throw new PluginException(LinkStatus.ERROR_IP_BLOCKED, "Error 429 too many requests", 1 * 60 * 1000l);
+        case 500:
+            throw new PluginException(LinkStatus.ERROR_HOSTER_TEMPORARILY_UNAVAILABLE, "Error 500 internal server error", 5 * 60 * 1000l);
+        default:
+            break;
+        }
+        return entries;
+    }
+
     @Override
     public AccountInfo fetchAccountInfo(final Account account) throws Exception {
         final AccountInfo ai = new AccountInfo();
         login(account);
         // https://developer.civitai.com/site/reference/users
-        br.getPage("https://civitai.com/api/v1/me");
-        final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
-        if ("Unauthorized".equals(response.get("error"))) {
-            throw new AccountInvalidException("api key invalid!");
-        } else if ("banned".equals(response.get("status"))) {
-            throw new AccountInvalidException("account banned!");
-        }
+        br.getPage(getApiBase() + "/me");
+        final Map<String, Object> response = checkErrorsAPI(br, true);
         final String email = (String) response.get("email");
         if (email != null) {
             account.setUser(email);

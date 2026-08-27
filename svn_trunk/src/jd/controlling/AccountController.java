@@ -380,7 +380,8 @@ public class AccountController implements AccountControllerListener, AccountProp
                     logger.info("Account:" + whoAmI + "|Expired!");
                     account.setError(AccountError.EXPIRED, -1, null);
                     return ai;
-                } else if (ai != null && !ai.isUnlimitedTraffic() && !ai.isSpecialTraffic() && ai.getTrafficLeft() == 0) {
+                } else if (ai != null && !ai.isUnlimitedTraffic() && !ai.isSpecialTraffic() && ai.getTrafficLeft() <= 0) {
+                    /* Out of traffic. trafficLeft can be negative, so treat any value <= 0 as "no traffic left". */
                     throw new AccountUnavailableException(_GUI.T.account_error_no_traffic_left(), 5 * 60 * 1000);
                 }
                 if (tempDisabledCounterBefore > 0 && account.getTmpDisabledTimeout() == tempDisabledCounterBefore) {

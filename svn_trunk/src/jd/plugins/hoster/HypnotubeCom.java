@@ -47,7 +47,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53237 $", interfaceVersion = 3, names = {}, urls = {})
 public class HypnotubeCom extends PluginForHost {
     public HypnotubeCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -147,7 +147,9 @@ public class HypnotubeCom extends PluginForHost {
     }
 
     private void handleAgeGate(Browser br) throws Exception {
-        if (StringUtils.containsIgnoreCase(br.getURL(), "/age-gate")) {
+        final String path = br._getURL().getPath();
+        final String msg = "Age Gate blocked";
+        if (StringUtils.containsIgnoreCase(path, "/age-gate")) {
             final Map<String, Object> json = new HashMap<String, Object>();
             json.put("timeZone", ZoneId.systemDefault().getId());
             json.put("languages", new String[] { "en-US", "en" });
@@ -155,10 +157,14 @@ public class HypnotubeCom extends PluginForHost {
             br.getPage(request);
             final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
             if (Boolean.TRUE.equals(response.get("blocked"))) {
-                throw new PluginException(LinkStatus.ERROR_IP_BLOCKED);
+                throw new PluginException(LinkStatus.ERROR_IP_BLOCKED, msg);
             }
             final String redirect = response.get("redirect").toString();
             br.getPage(redirect);
+        }
+        if (StringUtils.containsIgnoreCase(path, "/blocked")) {
+            /* Blocked UK users */
+            throw new PluginException(LinkStatus.ERROR_IP_BLOCKED, msg);
         }
     }
 

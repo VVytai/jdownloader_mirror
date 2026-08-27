@@ -64,6 +64,36 @@ default:
 
 Note: `switch` over an `enum` is Java 1.6 compatible — only `switch` over `String` is forbidden (see Java Compatibility above).
 
+## API Field Access (Null / Type Checks)
+
+When parsing API responses (JSON/map fields), do **not** add defensive null-checks or type-checks for fields that are expected to exist. Access them directly and let a missing/malformed required field fail loudly — it signals an API change or a bug, not a case to silently absorb.
+
+Add a null-check or type-check **only** when:
+
+- the field is documented as **optional** in the API docs, or
+- the field is explicitly requested to be guarded.
+
+**Forbidden** (unnecessary guard on a required field):
+```java
+Object id = entries.get("id");
+if (id != null && id instanceof Number) {
+    link.setProperty("id", ((Number) id).longValue());
+}
+```
+
+**Correct** (required field — access directly):
+```java
+final long id = ((Number) entries.get("id")).longValue();
+```
+
+**Correct** (field documented as optional — guard it):
+```java
+final Object description = entries.get("description"); // optional per API docs
+if (description != null) {
+    link.setComment(description.toString());
+}
+```
+
 ## Shared Plugin State (Cross-Instance Variables)
 
 Fields intended to be shared across plugin instances must **not** use `static`. Instead, they must be `final` and use thread-safe atomic types:

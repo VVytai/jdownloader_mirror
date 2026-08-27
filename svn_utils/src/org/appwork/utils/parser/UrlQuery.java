@@ -25,58 +25,56 @@ public class UrlQuery {
         final UrlQuery ret = new UrlQuery();
         if (query == null) {
             return ret;
-        } else {
-            try {
-                query = URLHelper.createURL(query).getQuery();
-            } catch (final IOException e) {
-                if (StringUtils.startsWithCaseInsensitive(e.getMessage(), "unknown protocol")) {
-                    try {
-                        final URL url = URLHelper.createURL(query.replaceFirst("^\\w+://", "http://"));
-                        URLHelper.verifyURL(url);
-                        query = url.getQuery();
-                    } catch (IOException ignore) {
-                    }
-                } else if (StringUtils.startsWithCaseInsensitive(e.getMessage(), "no protocol")) {
-                    try {
-                        final URL url = URLHelper.createURL("http://" + query);
-                        URLHelper.verifyURL(url);
-                        query = url.getQuery();
-                    } catch (IOException ignore) {
-                    }
+        }
+        try {
+            query = URLHelper.createURL(query).getQuery();
+        } catch (final IOException e) {
+            if (StringUtils.startsWithCaseInsensitive(e.getMessage(), "unknown protocol")) {
+                try {
+                    final URL url = URLHelper.createURL(query.replaceFirst("^\\w+://", "http://"));
+                    URLHelper.verifyURL(url);
+                    query = url.getQuery();
+                } catch (IOException ignore) {
+                }
+            } else if (StringUtils.startsWithCaseInsensitive(e.getMessage(), "no protocol")) {
+                try {
+                    final URL url = URLHelper.createURL("http://" + query);
+                    URLHelper.verifyURL(url);
+                    query = url.getQuery();
+                } catch (IOException ignore) {
                 }
             }
         }
         if (query == null) {
             return ret;
-        } else {
-            query = query.trim();
-            final StringBuilder sb = new StringBuilder();
-            String key = null;
-            for (int i = 0; i < query.length(); i++) {
-                char c = query.charAt(i);
-                // https://tools.ietf.org/html/rfc3986#section-3.4
-                // The characters slash ("/") and question mark ("?") may represent data
-                // within the query component.
-                if (c == '?' && i == 0) {
-                    sb.setLength(0);
-                } else if (c == '&') {
-                    if (key != null || sb.length() > 0) {
-                        ret.add(key, sb.toString());
-                    }
-                    sb.setLength(0);
-                    key = null;
-                } else if (c == '=' && key == null) {
-                    key = sb.toString();
-                    sb.setLength(0);
-                } else {
-                    sb.append(c);
-                }
-            }
-            if (key != null || sb.length() > 0) {
-                ret.add(key, sb.toString());
-            }
-            return ret;
         }
+        query = query.trim();
+        final StringBuilder sb = new StringBuilder();
+        String key = null;
+        for (int i = 0; i < query.length(); i++) {
+            char c = query.charAt(i);
+            // https://tools.ietf.org/html/rfc3986#section-3.4
+            // The characters slash ("/") and question mark ("?") may represent data
+            // within the query component.
+            if (c == '?' && i == 0) {
+                sb.setLength(0);
+            } else if (c == '&') {
+                if (key != null || sb.length() > 0) {
+                    ret.add(key, sb.toString());
+                }
+                sb.setLength(0);
+                key = null;
+            } else if (c == '=' && key == null) {
+                key = sb.toString();
+                sb.setLength(0);
+            } else {
+                sb.append(c);
+            }
+        }
+        if (key != null || sb.length() > 0) {
+            ret.add(key, sb.toString());
+        }
+        return ret;
     }
 
     private final List<KeyValueStringEntry> list = new ArrayList<KeyValueStringEntry>();

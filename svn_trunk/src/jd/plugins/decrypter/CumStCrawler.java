@@ -55,7 +55,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.CumSt;
 
-@DecrypterPlugin(revision = "$Revision: 53235 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53249 $", interfaceVersion = 3, names = {}, urls = {})
 public class CumStCrawler extends PluginForDecrypt {
     public CumStCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -110,9 +110,9 @@ public class CumStCrawler extends PluginForDecrypt {
     }
 
     /* service = any platform key without slash (e.g. onlyfans, fansly); creator- and post-ids are numeric, dm-ids are uuids. */
-    private static final Pattern PATTERN_POST      = Pattern.compile("/creators/([^/]+)/(\\d+)/post/(\\d+)(?:\\?[^#]*)?", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATTERN_DM        = Pattern.compile("/creators/([^/]+)/(\\d+)/dm/([\\w\\-]+)(?:\\?[^#]*)?", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-f0-9\\-]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_POST      = Pattern.compile("/creators/([^/]+)/(\\d+)/post/(\\d+).*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_DM        = Pattern.compile("/creators/([^/]+)/(\\d+)/dm/([\\w\\-]+).*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-f0-9\\-]+).*", Pattern.CASE_INSENSITIVE);
     /* API- and website path segment for the two supported content types. */
     private static final String  CONTENT_TYPE_POST = "post";
     private static final String  CONTENT_TYPE_DM   = "dm";
@@ -165,7 +165,8 @@ public class CumStCrawler extends PluginForDecrypt {
 
     /**
      * @param query
-     *            : If it contains offset "o", only this offset/page onwards will be crawled starting at that offset.
+     *            : If it contains offset "o" or page "pppage", only that single page is crawled. Supports the website's filter parameters
+     *            "pptype" (media type), "ppsort" (sort order) and "tab" (posts/dms).
      */
     private ArrayList<DownloadLink> crawlProfileAPI(final String service, final String creatorID, final UrlQuery query) throws Exception {
         if (service == null || creatorID == null) {
@@ -177,31 +178,78 @@ public class CumStCrawler extends PluginForDecrypt {
         final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
         final String creatorName = this.findCreatorName(service, creatorID);
         final FilePackage profileFilePackage = getFilePackageForProfileCrawler(service, creatorID, creatorName);
+        final int maxItemsPerPage = 50;
         int offset = 0;
-        String offsetString = null;
-        String qString = null;
+        boolean singlePageMode = false;
+        /*
+         * API query parameters derived from the website URL query. The website prefixes its filter parameters with "pp" (posts page); they
+         * apply equally to the "posts" and "dms" endpoint. See API docs: https://cum.st/api-docs
+         */
+        final UrlQuery apiQuery = new UrlQuery();
+        /* Content source selected via ?tab=... : "posts" (default) or "dms". Other values (e.g. "similar") fall back to posts. */
+        String endpointPath = "posts";
+        String responseKey = "posts";
+        String contentType = CONTENT_TYPE_POST;
         if (query != null) {
-            qString = query.get("q");
-            offsetString = query.getDecoded("o");
+            /* Search on caption/content: ?q=... -> API "q". */
+            final String qString = query.getDecoded("q");
+            if (!StringUtils.isEmpty(qString)) {
+                apiQuery.appendEncoded("q", qString);
+            }
+            /* Media-type filter: ?pptype=photos|videos|audio|text|media -> API "type". Unknown/absent = no filter. */
+            final String type = query.getDecoded("pptype");
+            if (!StringUtils.isEmpty(type)) {
+                apiQuery.appendEncoded("type", type);
+            }
+            /* Sort order: ?ppsort=recent|oldest|popular|attachments|videos|imported|relevance -> API "sort". */
+            final String sort = query.getDecoded("ppsort");
+            if (!StringUtils.isEmpty(sort)) {
+                apiQuery.appendEncoded("sort", sort);
+            }
+            /* Tab selection: ?tab=dms switches from posts to direct messages. */
+            final String tab = query.getDecoded("tab");
+            if ("dms".equalsIgnoreCase(tab)) {
+                endpointPath = "dms";
+                responseKey = "dms";
+                contentType = CONTENT_TYPE_DM;
+            }
+            /* Note: ?display=collages|collage|separate is a website-only rendering option and has no effect on the API/download. */
+            /*
+             * Single-page selection. The API paginates via offset "o". An explicit ?o=... takes precedence; otherwise ?pppage=N (1-based
+             * page number, the website's own parameter; "ppage" is accepted as a tolerant alias) is translated into an offset via (N-1)*n.
+             * When either is given, only that single page is crawled.
+             */
+            final String offsetString = query.getDecoded("o");
+            String pageString = query.getDecoded("pppage");
+            if (pageString == null) {
+                pageString = query.getDecoded("ppage");
+            }
             if (offsetString != null && offsetString.matches("^\\d+$")) {
-                logger.info("Starting from offset: " + offsetString);
                 offset = Integer.parseInt(offsetString);
+                singlePageMode = true;
+                logger.info("Starting from offset: " + offset);
+            } else if (pageString != null && pageString.matches("^\\d+$")) {
+                final int pageNumber = Math.max(1, Integer.parseInt(pageString));
+                offset = (pageNumber - 1) * maxItemsPerPage;
+                singlePageMode = true;
+                logger.info("Starting from page: " + pageNumber + " (offset " + offset + ")");
             }
         }
-        if (qString == null) {
-            qString = "";
-        } else {
-            qString = "&q=" + qString;
-        }
+        final boolean isSearch = apiQuery.containsKey("q");
+        final boolean isNonSearchButStillFilterLikeQuery = apiQuery.containsKey("type") || contentType.equals(CONTENT_TYPE_DM);
+        apiQuery.appendEncoded("n", String.valueOf(maxItemsPerPage));
         int page = 1;
-        final int maxItemsPerPage = 50;
         pagination: do {
-            getPage(br, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(creatorID) + "/posts?o=" + offset + "&n=" + maxItemsPerPage + qString);
+            apiQuery.addAndReplace("o", String.valueOf(offset));
+            getPage(br, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(creatorID) + "/" + endpointPath + "?" + apiQuery.toString());
             final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
-            final List<Map<String, Object>> posts = (List<Map<String, Object>>) response.get("posts");
+            final List<Map<String, Object>> posts = (List<Map<String, Object>>) response.get(responseKey);
             if (posts == null || posts.isEmpty()) {
                 if (ret.isEmpty()) {
-                    if (!StringUtils.isEmpty(qString)) {
+                    if (isSearch) {
+                        throw new DecrypterRetryException(RetryReason.EMPTY_SEARCH_QUERY);
+                    }
+                    if (isNonSearchButStillFilterLikeQuery) {
                         throw new DecrypterRetryException(RetryReason.EMPTY_SEARCH_QUERY);
                     }
                     throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
@@ -212,7 +260,7 @@ public class CumStCrawler extends PluginForDecrypt {
             }
             for (final Map<String, Object> post : posts) {
                 final String postID = post.get("id").toString();
-                final ArrayList<DownloadLink> thisresults = crawlContentAPI(br, service, creatorID, creatorName, CONTENT_TYPE_POST, postID);
+                final ArrayList<DownloadLink> thisresults = crawlContentAPI(br, service, creatorID, creatorName, contentType, postID);
                 if (!perPostPackageEnabled) {
                     for (final DownloadLink thisresult : thisresults) {
                         thisresult._setFilePackage(profileFilePackage);
@@ -225,8 +273,8 @@ public class CumStCrawler extends PluginForDecrypt {
             if (this.isAbort()) {
                 logger.info("Stopping because: Aborted by user");
                 break pagination;
-            } else if (StringUtils.isNotEmpty(offsetString)) {
-                logger.info("Stopping because: User provided specific offset to crawl: " + offsetString);
+            } else if (singlePageMode) {
+                logger.info("Stopping because: User provided a specific offset/page to crawl");
                 break pagination;
             } else if (posts.size() < maxItemsPerPage) {
                 logger.info("Stopping because: Reached last page(?) Page: " + page);

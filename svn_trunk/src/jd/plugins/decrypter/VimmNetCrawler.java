@@ -18,12 +18,18 @@ package jd.plugins.decrypter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.appwork.storage.TypeRef;
+import org.jdownloader.captcha.v2.challenge.cloudflareturnstile.CaptchaHelperCrawlerPluginCloudflareTurnstile;
 
 import jd.PluginWrapper;
 import jd.controlling.ProgressController;
 import jd.http.Browser;
+import jd.http.Cookies;
 import jd.nutils.encoding.Encoding;
 import jd.parser.Regex;
+import jd.parser.html.Form;
 import jd.plugins.CryptedLink;
 import jd.plugins.DecrypterPlugin;
 import jd.plugins.DownloadLink;
@@ -33,13 +39,14 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.VimmNet;
 
-import org.appwork.storage.TypeRef;
-
-@DecrypterPlugin(revision = "$Revision: 52613 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53254 $", interfaceVersion = 3, names = {}, urls = {})
 public class VimmNetCrawler extends PluginForDecrypt {
     public VimmNetCrawler(PluginWrapper wrapper) {
         super(wrapper);
     }
+
+    /** Global cookie cache shared across plugin instances to avoid solving a captcha for every crawl process. */
+    private final AtomicReference<Cookies> CACHED_COOKIES = new AtomicReference<Cookies>();
 
     @Override
     public Browser createNewBrowserInstance() {
@@ -79,10 +86,33 @@ public class VimmNetCrawler extends PluginForDecrypt {
     public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
         final String contentid = new Regex(param.getCryptedUrl(), this.getSupportedLinks()).getMatch(0);
         final String contenturl = "https://" + this.getHost() + "/vault/" + contentid;
+        /* Load previously stored cookies (e.g. from a former captcha) to possibly avoid having to solve another captcha. */
+        synchronized (CACHED_COOKIES) {
+            final Cookies cookies = CACHED_COOKIES.get();
+            if (cookies != null) {
+                br.setCookies(this.getHost(), cookies);
+            }
+        }
         br.getPage(contenturl);
+        /* Captcha form may come along with http response 404 so first handle captcha, then check for offline */
+        final Form captchaform = br.getFormbyProperty("id", "turnstile-form");
+        if (captchaform != null) {
+            final String cfTurnstileResponse = new CaptchaHelperCrawlerPluginCloudflareTurnstile(this, br).getToken();
+            captchaform.put("cf-turnstile-response", Encoding.urlEncode(cfTurnstileResponse));
+            br.submitForm(captchaform);
+            /* Captcha solved -> Store cookies so we can re-use them next time to avoid solving another captcha. */
+            synchronized (CACHED_COOKIES) {
+                CACHED_COOKIES.set(br.getCookies(this.getHost()));
+            }
+        }
         if (br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
+        /**
+         * Grab PHPSESSID cookie which we get after solving the captcha. </br>
+         * We store it on all results so the hoster plugin can re-use it to avoid having to solve another captcha.
+         */
+        final String phpsessid = br.getCookie(br.getHost(), VimmNet.COOKIE_PHPSESSID);
         final String downloadUnavailableText = findDownloadUnavailableText(br);
         if (downloadUnavailableText != null) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND, downloadUnavailableText);
@@ -117,7 +147,8 @@ public class VimmNetCrawler extends PluginForDecrypt {
             }
             /**
              * There are file-hashes available but it looks like those are for the files inside the .zip archives so we can't make use of
-             * them. </br> See fields GoodHash, GoodMd5, GoodSha1
+             * them. </br>
+             * See fields GoodHash, GoodMd5, GoodSha1
              */
             if (filesizeAltZippedStr != null && filesizeAltZippedStr.toString().matches("\\d+") && resourcelist.size() == 1 && downloadformatsOptions != null && downloadformatsOptions.length >= 2) {
                 /* Alternative version is available */
@@ -162,6 +193,9 @@ public class VimmNetCrawler extends PluginForDecrypt {
         /* Set some additional properties which we want to have on all of our results. */
         for (final DownloadLink result : ret) {
             result.setAvailable(true);
+            if (phpsessid != null) {
+                result.setProperty(VimmNet.PROPERTY_PHPSESSID, phpsessid);
+            }
             VimmNet.setFilename(this, result, false);
             if (fp != null) {
                 result._setFilePackage(fp);

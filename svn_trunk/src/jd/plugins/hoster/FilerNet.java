@@ -58,7 +58,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53236 $", interfaceVersion = 2, names = {}, urls = {})
 public class FilerNet extends PluginForHost {
     private static final int    STATUSCODE_APIDISABLED                             = 400;
     private static final String ERRORMESSAGE_APIDISABLEDTEXT                       = "API is disabled, please wait or use filer.net in your browser";
@@ -456,12 +456,25 @@ public class FilerNet extends PluginForHost {
                      * Negative traffic recovers over time: 50 GB is added back every 24 hours (which equals 1 GB every 28.8 minutes).
                      * Calculate how long we need to wait until the account has positive traffic again.
                      */
-                    final long recoveryBytesPerInterval = 50 * (1024 * 1024 * 1024l); /* 50 GB */
-                    final long recoveryIntervalMillis = TimeUnit.HOURS.toMillis(24); /* 24 hours */
-                    long waitMillis = negativeTrafficBytes * recoveryIntervalMillis / recoveryBytesPerInterval;
-                    /* No matter what gets calculated the minimum wait time shall be 1 minute. */
-                    waitMillis = Math.max(waitMillis, TimeUnit.MINUTES.toMillis(1));
-                    throw new AccountUnavailableException("Kein Traffic übrig: -" + negativeTrafficFormatted, waitMillis);
+                    final long bytesPerGB = 1024 * 1024 * 1024l;
+                    /* 50 GB every 24 hours equals 1 GB every 1728000 ms (28.8 minutes). */
+                    final long millisPerGB = TimeUnit.HOURS.toMillis(24) / 50;
+                    /*
+                     * Divide the 24h interval by 50 up front so the smaller millisPerGB value enters the multiplication instead of the
+                     * large 24h value. This keeps full byte precision while pushing the long overflow far out of any realistic traffic
+                     * range.
+                     */
+                    final long recoveryMillis = negativeTrafficBytes * millisPerGB / bytesPerGB;
+                    /* Build a human readable ETA (hours and minutes) from the full recovery time. */
+                    final long etaTotalMinutes = recoveryMillis / TimeUnit.MINUTES.toMillis(1);
+                    final long etaHours = etaTotalMinutes / 60;
+                    final long etaMinutes = etaTotalMinutes % 60;
+                    /*
+                     * Do not block the account for the full recovery time: wait at most 30 minutes (and at least 5 minutes) before
+                     * re-checking, but display the full ETA in the error message.
+                     */
+                    final long waitMillis = Math.max(TimeUnit.MINUTES.toMillis(5), Math.min(recoveryMillis, TimeUnit.MINUTES.toMillis(30)));
+                    throw new AccountUnavailableException("Kein Traffic übrig: -" + negativeTrafficFormatted + " | eta " + etaHours + "h:" + etaMinutes + "m", waitMillis);
                 }
             }
             final Long validUntil = (Long) ReflectionUtils.cast(data.get("until"), Long.class);

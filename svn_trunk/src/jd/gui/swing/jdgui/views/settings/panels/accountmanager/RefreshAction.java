@@ -113,10 +113,14 @@ public class RefreshAction extends AbstractAction implements AccountControllerLi
 
     @Override
     public boolean isEnabled() {
-        if (selection != null && selection.size() > 0) {
-            return true;
+        if (selection != null) {
+            /*
+             * Context-menu action: enabled only if at least one account is selected. An empty selection (e.g. right-click on empty table
+             * area) must stay greyed out since there is nothing to refresh.
+             */
+            return selection.size() > 0;
         }
-        /* Toolbar / "refresh all" action: enabled only if at least one enabled account without permanent error state exists. */
+        /* Toolbar / "refresh all" action (selection == null): enabled only if at least one enabled+valid account exists. */
         final List<Account> accs = AccountController.getInstance().listAccounts(getAccountFilter().setMaxResultsNum(1));
         return accs.size() > 0;
     }

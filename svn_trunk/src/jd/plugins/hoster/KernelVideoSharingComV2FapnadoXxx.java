@@ -16,7 +16,9 @@
 package jd.plugins.hoster;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,7 +29,7 @@ import jd.plugins.DownloadLink;
 import jd.plugins.HostPlugin;
 import jd.plugins.PluginException;
 
-@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53246 $", interfaceVersion = 3, names = {}, urls = {})
 public class KernelVideoSharingComV2FapnadoXxx extends KernelVideoSharingComV2 {
     public KernelVideoSharingComV2FapnadoXxx(final PluginWrapper wrapper) {
         super(wrapper);
@@ -44,10 +46,19 @@ public class KernelVideoSharingComV2FapnadoXxx extends KernelVideoSharingComV2 {
         return buildAnnotationNames(getPluginDomains());
     }
 
+    private final Map<String, String> cryptedMapping = new HashMap<String, String>();
+
+    @Override
+    public void clean() {
+        cryptedMapping.clear();
+        super.clean();
+    }
+
     @Override
     protected String decryptDirectURLIfRequired(DownloadLink link, Browser br, String url) throws PluginException {
         if (br.containsHTML("unfurl\\(\"" + Pattern.quote(url))) {
             final String decrypted = decrypt_url(br, url);
+            cryptedMapping.put(decrypted, url);
             return decrypted;
         }
         return super.decryptDirectURLIfRequired(link, br, url);
@@ -112,6 +123,43 @@ public class KernelVideoSharingComV2FapnadoXxx extends KernelVideoSharingComV2 {
             return true;
         } else {
             return super.isOfflineWebsite(br);
+        }
+    }
+
+    @Override
+    protected int addQualityURL(Browser br, DownloadLink link, Map<Integer, String> qualityMap, String url) {
+        final String title;
+        if (!cryptedMapping.containsKey(url)) {
+            title = br.getRegex(Pattern.quote(url) + "('|\")\\s*\\s*type\\s*=\\s*\\1video/[a-z0-9]+\\1\\s*title\\s*=\\s*\\1(.*?)\\1").getMatch(1);
+        } else {
+            final String orgUrl = cryptedMapping.get(url);
+            title = br.getRegex(Pattern.quote(orgUrl) + "\"\\)\\);o.setAttribute\\(\"type\",\"video/mp4\"\\);o.setAttribute\\('title',\"(.*?)\"\\)").getMatch(0);
+        }
+        title: if (title != null) {
+            final Integer height = labelToHeight(title);
+            if (height == null) {
+                break title;
+            }
+            qualityMap.put(height, url);
+            return height.intValue();
+        }
+        return super.addQualityURL(br, link, qualityMap, url);
+    }
+
+    private Integer labelToHeight(final String label) {
+        final String heightStr = new Regex(label, "(\\d+)p").getMatch(0);
+        if (heightStr != null) {
+            return Integer.parseInt(heightStr);
+        } else if ("Standard".equalsIgnoreCase(label)) {
+            return 360;
+        } else if ("SD".equalsIgnoreCase(label)) {
+            return 480;
+        } else if ("HD".equalsIgnoreCase(label)) {
+            return 720;
+        } else if ("FHD".equalsIgnoreCase(label)) {
+            return 1080;
+        } else {
+            return null;
         }
     }
 }

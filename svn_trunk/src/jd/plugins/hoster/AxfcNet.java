@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.formatter.SizeFormatter;
@@ -38,7 +39,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.download.HashInfo;
 
-@HostPlugin(revision = "$Revision: 53147 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53258 $", interfaceVersion = 3, names = {}, urls = {})
 public class AxfcNet extends PluginForHost {
     public AxfcNet(PluginWrapper wrapper) {
         super(wrapper);
@@ -58,7 +59,7 @@ public class AxfcNet extends PluginForHost {
         return "https://" + getHost();
     }
 
-    private static List<String[]> getPluginDomains() {
+    public static List<String[]> getPluginDomains() {
         final List<String[]> ret = new ArrayList<String[]>();
         // each entry in List<String[]> will result in one PluginForHost, Plugin.getHost() will return String[0]->main domain
         ret.add(new String[] { "axfc.net" });
@@ -77,10 +78,12 @@ public class AxfcNet extends PluginForHost {
     public static String[] getAnnotationUrls() {
         final List<String> ret = new ArrayList<String>();
         for (final String[] domains : getPluginDomains()) {
-            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/(?:u|uploader/[^/]+/so)/(\\d+)[^/]*");
+            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + PATTERN_FILE.pattern());
         }
         return ret.toArray(new String[0]);
     }
+
+    private static final Pattern PATTERN_FILE = Pattern.compile("/(?:u|uploader/[^/]+/so)/(\\d+)[^/]*");
 
     @Override
     public String getLinkID(final DownloadLink link) {
@@ -93,7 +96,12 @@ public class AxfcNet extends PluginForHost {
     }
 
     private String getFID(final DownloadLink link) {
-        return new Regex(link.getPluginPatternMatcher(), this.getSupportedLinks()).getMatch(0);
+        return new Regex(link.getPluginPatternMatcher(), PATTERN_FILE).getMatch(0);
+    }
+
+    @Override
+    protected String getDefaultFileName(final DownloadLink link) {
+        return this.getFID(link);
     }
 
     @Override
@@ -111,7 +119,19 @@ public class AxfcNet extends PluginForHost {
             return null;
         }
         try {
-            final String passCodeFromURL = UrlQuery.parse(link.getPluginPatternMatcher()).get("key");
+            /*
+             * Workaround for bug in UrlQuery which prevents it from parsing URLs where parameters start with "&" instead of "?" while it is
+             * supposed to be able to parse such URLs.
+             */
+            String url = link.getPluginPatternMatcher();
+            if (!url.contains("?") && url.contains("&")) {
+                url = url.replaceFirst("&", "?");
+            }
+            String passCodeFromURL = UrlQuery.parse(url).get("key");
+            if (passCodeFromURL == null) {
+                return null;
+            }
+            passCodeFromURL = Encoding.htmlDecode(passCodeFromURL);
             return passCodeFromURL;
         } catch (MalformedURLException e) {
             e.printStackTrace();
@@ -121,17 +141,17 @@ public class AxfcNet extends PluginForHost {
 
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws IOException, PluginException {
-        if (!link.isNameSet()) {
-            /* Fallback */
-            link.setName(this.getFID(link));
-        }
         this.setBrowserExclusive();
         br.getPage(link.getPluginPatternMatcher());
+        if (br.getHttpConnection().getResponseCode() == 403) {
+            /* Invalid url e.g. /u/3791809&key=%E3%81%BC%E3%81%9F%E3%82%82%E3%81%A1.%20Read%20More.%20%5B0%5D%20Likes.%20Rating:%20N */
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+        }
         if (br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         String filename = br.getRegex("name=\"download\"[^>]*>\\s*</a>\\s*<h2>Download \\d+\\.[^\\(]*\\(([^<]+)\\)\\s*</h2>").getMatch(0);
-        String filesize = br.getRegex("<b>\\s*Size\\s*</b>\\s*</span>\\s*<span[^>]*>([^<]+)</span>").getMatch(0);
+        final String filesize = br.getRegex("<b>\\s*Size\\s*</b>\\s*</span>\\s*<span[^>]*>([^<]+)</span>").getMatch(0);
         if (filename != null) {
             filename = Encoding.htmlDecode(filename).trim();
             /**
@@ -234,7 +254,7 @@ public class AxfcNet extends PluginForHost {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
         br.getPage(continuelink);
-        String dllink = br.getRegex("<a href=\"([^\"]+)\"[^>]*>\\s*To start download").getMatch(0);
+        final String dllink = br.getRegex("<a href=\"([^\"]+)\"[^>]*>\\s*To start download").getMatch(0);
         if (StringUtils.isEmpty(dllink)) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }

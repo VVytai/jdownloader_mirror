@@ -88,7 +88,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.components.SiteType.SiteTemplate;
 
-@HostPlugin(revision = "$Revision: 53228 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53241 $", interfaceVersion = 3, names = {}, urls = {})
 public abstract class KernelVideoSharingComV2 extends PluginForHost {
     public KernelVideoSharingComV2(PluginWrapper wrapper) {
         super(wrapper);
@@ -2010,7 +2010,10 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
         return finalURL;
     }
 
-    private int addQualityURL(final Browser br, final DownloadLink link, final Map<Integer, String> qualityMap, final String url) {
+    protected int addQualityURL(final Browser br, final DownloadLink link, final Map<Integer, String> qualityMap, final String url) {
+        if (qualityMap == null) {
+            throw new IllegalArgumentException("qualityMap must not be null");
+        }
         /* Sometimes, found "quality" == fuid --> == no quality indicator at all */
         final String fuid = this.getFUID(link);
         String qualityTmpStr = new Regex(url, "(?i)(\\d+)(p|m)\\.mp4").getMatch(0);
@@ -2019,31 +2022,16 @@ public abstract class KernelVideoSharingComV2 extends PluginForHost {
             qualityTmpStr = new Regex(url, "(?i)(\\d+)\\.mp4").getMatch(0);
         }
         if (StringUtils.equals(qualityTmpStr, fuid)) {
-            qualityTmpStr = null;
-        }
-        if (qualityTmpStr == null) {
-            // fapnado.com
-            final String title = br.getRegex(Pattern.quote(url) + "('|\")\\s*\\s*type\\s*=\\s*\\1video/[a-z0-9]+\\1\\s*title\\s*=\\s*\\1(.*?)\\1").getMatch(1);
-            if ("Standard".equalsIgnoreCase(qualityTmpStr)) {
-                qualityTmpStr = "360";
-            } else if ("SD".equalsIgnoreCase(qualityTmpStr)) {
-                qualityTmpStr = "480";
-            } else if ("HD".equalsIgnoreCase(title)) {
-                qualityTmpStr = "720";
-            } else if ("FHD".equalsIgnoreCase(title)) {
-                qualityTmpStr = "1080";
-            }
+            logger.info("Failed to find valid quality identifier for URL: " + url);
+            return -1;
         }
         if (qualityTmpStr == null) {
             logger.info("Failed to find quality identifier for URL: " + url);
             return -1;
-        } else {
-            final int qualityTmp = Integer.parseInt(qualityTmpStr);
-            if (qualityMap != null) {
-                qualityMap.put(qualityTmp, url);
-            }
-            return qualityTmp;
         }
+        final int qualityTmp = Integer.parseInt(qualityTmpStr);
+        qualityMap.put(qualityTmp, url);
+        return qualityTmp;
     }
 
     /** Returns user preferred quality inside given quality map. Returns best, if user selection is not present in map. */

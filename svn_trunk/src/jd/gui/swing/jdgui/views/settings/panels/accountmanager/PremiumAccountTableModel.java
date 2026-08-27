@@ -305,7 +305,12 @@ public class PremiumAccountTableModel extends ExtTableModel<AccountEntry> implem
                 _refill();
             }
         };
-        delayedUpdate = new DelayedRunnable(scheduler, 250l) {
+        /*
+         * maxDelay ensures the update still fires at least once per second even while account-check events keep arriving faster than the
+         * 250ms debounce window (e.g. during a bulk "refresh all"). Otherwise the debounce could be starved and per-account status/icons
+         * would only refresh once every check is already done.
+         */
+        delayedUpdate = new DelayedRunnable(scheduler, 250l, 1000l) {
             @Override
             public String getID() {
                 return "PremiumAccountTableUpdate";
@@ -821,6 +826,13 @@ public class PremiumAccountTableModel extends ExtTableModel<AccountEntry> implem
 
     public void onCheckStarted() {
         checkRunning = true;
+        /*
+         * Trigger an immediate repaint so the "checking" animation starts as soon as checking begins. Without this, the animation could
+         * only ever start as a side effect of the debounced update triggered by ACCOUNT_CHECKED/ACCOUNT_PROPERTY_UPDATE events. During a
+         * bulk refresh (e.g. "refresh all") those events arrive faster than the 250ms debounce window, so the debounced update is starved
+         * and only runs once all checks are already done (checkRunning == false again) -> no animation was shown at all.
+         */
+        _update();
     }
 
     public void onCheckStopped() {

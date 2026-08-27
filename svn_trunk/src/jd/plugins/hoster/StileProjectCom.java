@@ -36,13 +36,13 @@ import jd.plugins.PluginDependencies;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53223 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53242 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { jd.plugins.decrypter.StileProjectComDecrypter.class })
 public class StileProjectCom extends PluginForHost {
-    private String                        dllink          = null;
-    private static final Pattern          PATTERN_EMBED   = Pattern.compile("/embed/(\\d+)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern          PATTERN_NORMAL  = Pattern.compile("/video/([a-z0-9\\-_]+)-(\\d+)\\.html", Pattern.CASE_INSENSITIVE);
-    private static final Pattern          PATTERN_NORMAL2 = Pattern.compile("/videos/(\\d+)/([a-z0-9\\-_]+)/?", Pattern.CASE_INSENSITIVE);
+    private String               dllink          = null;
+    private static final Pattern PATTERN_EMBED   = Pattern.compile("/embed/(\\d+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_NORMAL  = Pattern.compile("/video/([a-z0-9\\-_]+)-(\\d+)\\.html", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_NORMAL2 = Pattern.compile("/videos/(\\d+)/([a-z0-9\\-_]+)/?", Pattern.CASE_INSENSITIVE);
 
     public StileProjectCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -200,10 +200,7 @@ public class StileProjectCom extends PluginForHost {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
         dl = new jd.plugins.BrowserAdapter().openDownload(br, link, dllink, true, 0);
-        if (!this.looksLikeDownloadableContent(dl.getConnection())) {
-            br.followConnection(true);
-            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-        }
+        this.handleConnectionErrors(br, dl.getConnection());
         dl.startDownload();
     }
 

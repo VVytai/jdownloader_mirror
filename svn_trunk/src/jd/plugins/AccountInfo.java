@@ -136,7 +136,7 @@ public class AccountInfo extends Property implements AccountTrafficView {
     }
 
     /**
-     * Gibt zurück wieviele Files auf dem Account hochgeladen sind
+     * Returns the number of files uploaded to this account.
      *
      * @return
      */
@@ -145,7 +145,7 @@ public class AccountInfo extends Property implements AccountTrafficView {
     }
 
     /**
-     * Gibt an wieviele PremiumPunkte der Account hat
+     * Returns the number of premium points this account has.
      *
      * @return
      */
@@ -158,7 +158,11 @@ public class AccountInfo extends Property implements AccountTrafficView {
     }
 
     /**
-     * Gibt an wieviel Traffic noch frei ist (in bytes)
+     * Returns the remaining traffic in bytes.
+     *
+     * The returned value can be negative if the account is out of traffic (e.g. overdrawn); callers should treat any value <= 0 as "no
+     * traffic left". Returns 0 if traffic is unlimited (see {@link #isUnlimitedTraffic()}), so always check {@link #isUnlimitedTraffic()}
+     * before interpreting the returned value.
      *
      * @return
      */
@@ -175,7 +179,7 @@ public class AccountInfo extends Property implements AccountTrafficView {
     }
 
     /**
-     * Gibt zurück wieviel Platz (bytes) die Oploads auf diesem Account belegen
+     * Returns how much space (bytes) the uploads on this account occupy.
      *
      * @return
      */
@@ -184,7 +188,7 @@ public class AccountInfo extends Property implements AccountTrafficView {
     }
 
     /**
-     * Gibt einen Timestamp zurück zu dem der Account auslaufen wird bzw. ausgelaufen ist.(-1 für Nie)
+     * Returns a timestamp at which the account will expire or has expired. (-1 means never)
      *
      * @return
      */

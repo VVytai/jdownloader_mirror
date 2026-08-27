@@ -64,7 +64,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.KemonoParty;
 
-@DecrypterPlugin(revision = "$Revision: 53145 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53244 $", interfaceVersion = 3, names = {}, urls = {})
 public class KemonoPartyCrawler extends PluginForDecrypt {
     public KemonoPartyCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -182,19 +182,22 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
         final FilePackage profileFilePackage = getFilePackageForProfileCrawler(service, usernameOrUserID);
         int offset = 0;
         String offsetString = null;
-        String qString = null;
+        /* Query used for the posts API request. */
+        final UrlQuery requestQuery = new UrlQuery();
         if (query != null) {
-            qString = query.get("q");
             offsetString = query.getDecoded("o");
             if (offsetString != null && offsetString.matches("^\\d+$")) {
                 logger.info("Starting from offset: " + offsetString);
                 offset = Integer.parseInt(offsetString);
             }
-        }
-        if (qString == null) {
-            qString = "";
-        } else {
-            qString = "&q=" + qString;
+            final String qString = query.getDecoded("q");
+            if (qString != null) {
+                requestQuery.appendEncoded("q", qString);
+            }
+            final String tagString = query.getDecoded("tag");
+            if (tagString != null) {
+                requestQuery.appendEncoded("tag", tagString);
+            }
         }
         int page = 1;
         final int maxItemsPerPage = 50;
@@ -202,11 +205,12 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
         final int maxPagesWithoutNewItems = 15;
         final Set<String> retryWithSinglePostAPI = new HashSet<String>();
         pagination: do {
-            getPage(br, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(usernameOrUserID) + "/posts?o=" + offset + qString);
+            requestQuery.appendEncoded("o", String.valueOf(offset));
+            getPage(br, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(usernameOrUserID) + "/posts?" + requestQuery.toString());
             final List<Map<String, Object>> posts = (List<Map<String, Object>>) restoreFromString(br.getRequest().getHtmlCode(), TypeRef.OBJECT);
             if (posts == null || posts.isEmpty()) {
                 if (ret.isEmpty() && retryWithSinglePostAPI.isEmpty()) {
-                    if (!StringUtils.isEmpty(qString)) {
+                    if (requestQuery.containsKey("q") || requestQuery.containsKey("tag")) {
                         throw new DecrypterRetryException(RetryReason.EMPTY_SEARCH_QUERY);
                     }
                     throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
@@ -568,27 +572,30 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
             }
         }
         final String username = this.findUsername(service, usernameOrUserID);
-        for (final DownloadLink kemonoResult : directResults) {
+        for (final DownloadLink directResult : directResults) {
             if (!StringUtils.isEmpty(postTitle)) {
-                kemonoResult.setProperty(KemonoParty.PROPERTY_TITLE, postTitle);
+                directResult.setProperty(KemonoParty.PROPERTY_TITLE, postTitle);
             }
             if (!StringUtils.isEmpty(postTextContent)) {
-                kemonoResult.setProperty(KemonoParty.PROPERTY_POST_TEXT, postTextContent);
+                directResult.setProperty(KemonoParty.PROPERTY_POST_TEXT, postTextContent);
             }
             if (publishedDateStr != null) {
-                kemonoResult.setProperty(KemonoParty.PROPERTY_DATE, publishedDateStr);
+                directResult.setProperty(KemonoParty.PROPERTY_DATE, publishedDateStr);
             }
             if (editedDateStr != null) {
-                kemonoResult.setProperty(KemonoParty.PROPERTY_DATE_EDIT, editedDateStr);
+                directResult.setProperty(KemonoParty.PROPERTY_DATE_EDIT, editedDateStr);
             }
-            kemonoResult.setProperty(KemonoParty.PROPERTY_PORTAL, service);
-            kemonoResult.setProperty(KemonoParty.PROPERTY_USERID, usernameOrUserID);
-            kemonoResult.setProperty(KemonoParty.PROPERTY_USERNAME, username);
-            kemonoResult.setProperty(KemonoParty.PROPERTY_POST_ID, postID);
-            kemonoResult.setProperty(KemonoParty.PROPERTY_REVISION_ID, revisionID);
-            kemonoResult.setAvailable(true);
+            directResult.setProperty(KemonoParty.PROPERTY_PORTAL, service);
+            directResult.setProperty(KemonoParty.PROPERTY_USERID, usernameOrUserID);
+            directResult.setProperty(KemonoParty.PROPERTY_USERNAME, username);
+            directResult.setProperty(KemonoParty.PROPERTY_POST_ID, postID);
+            directResult.setProperty(KemonoParty.PROPERTY_REVISION_ID, revisionID);
+            /* Only set online if no status was evaluated yet (offline preview items already carry their status). */
+            if (!directResult.isAvailabilityStatusChecked()) {
+                directResult.setAvailable(true);
+            }
             /* Add kemono item to our list of total results. */
-            ret.add(kemonoResult);
+            ret.add(directResult);
         }
         if (DebugMode.TRUE_IN_IDE_ELSE_FALSE) {
             // Test 2024-03-25, see: https://board.jdownloader.org/showthread.php?t=95398
@@ -620,6 +627,12 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
         }
         final boolean has_full_final = Boolean.TRUE.equals(has_full);
         final String filepath = filepathO.toString();
+        /*
+         * Evaluate the file type based on the path extension (path is always given). When only a preview is available (has_full == false),
+         * only images have a real thumbnail; any non-image item is offline as it cannot have a thumbnail (e.g. archives).
+         */
+        final boolean isImage = CompiledFiletypeFilter.getExtensionsFilterInterface(Files.getExtension(filepath, true)) instanceof CompiledFiletypeFilter.ImageExtensions;
+        final boolean isOfflinePreview = !has_full_final && !isImage;
         String url;
         if (has_full_final) {
             url = getBaseURLData() + filepath;
@@ -636,9 +649,14 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
             }
             if (has_full_final) {
                 url += "?f=" + Encoding.urlEncode(filename);
-            } else {
+            } else if (isImage) {
+                /* Image preview -> real thumbnail, mark the filename accordingly. */
                 filename = "thumb_" + filename;
             }
+            /*
+             * Non-image preview items are not thumbnails and are offline anyway, so we keep the original filename without the "thumb_"
+             * prefix.
+             */
         }
         /* The file hash can only be used for CRC check for original file downloads, not for thumbnail downloads. */
         final String sha256hash = has_full_final ? KemonoParty.getSha256HashFromURL(url) : null;
@@ -661,8 +679,13 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
         if (sha256hash != null) {
             media.setSha256Hash(sha256hash);
         }
-        if (!has_full_final) {
+        if (!has_full_final && isImage) {
+            /* Only image previews are real thumbnails. */
             media.setProperty(KemonoParty.PROPERTY_IS_THUMBNAIL, true);
+        }
+        if (isOfflinePreview) {
+            /* Only a preview is available but this non-image item cannot have a thumbnail -> mark as offline. */
+            media.setAvailable(false);
         }
         return media;
     }
