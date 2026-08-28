@@ -26,6 +26,7 @@ public class RuleWrapper<T extends FilterRule> {
     private final CompiledRegexFilter        commentRule;
     private final CompiledLinkEnabledFilter      linkEnabledFilter;
     private final CompiledDownloadListDupeFilter downloadListDupeFilter;
+    private final CompiledLinkgrabberDupeFilter  linkgrabberDupeFilter;
 
     public CompiledPluginStatusFilter getPluginStatusFilter() {
         return pluginStatusFilter;
@@ -37,6 +38,10 @@ public class RuleWrapper<T extends FilterRule> {
 
     public CompiledDownloadListDupeFilter getDownloadListDupeFilter() {
         return downloadListDupeFilter;
+    }
+
+    public CompiledLinkgrabberDupeFilter getLinkgrabberDupeFilter() {
+        return linkgrabberDupeFilter;
     }
 
     public RuleWrapper(final T rule2) {
@@ -103,6 +108,11 @@ public class RuleWrapper<T extends FilterRule> {
             downloadListDupeFilter = new CompiledDownloadListDupeFilter(rule.getDownloadListDupeFilter());
         } else {
             downloadListDupeFilter = null;
+        }
+        if (rule.getLinkgrabberDupeFilter().isEnabled()) {
+            linkgrabberDupeFilter = new CompiledLinkgrabberDupeFilter(rule.getLinkgrabberDupeFilter());
+        } else {
+            linkgrabberDupeFilter = null;
         }
         if (rule.getMatchAlwaysFilter().isEnabled()) {
             alwaysFilter = rule.getMatchAlwaysFilter();
@@ -527,6 +537,14 @@ public class RuleWrapper<T extends FilterRule> {
             return true;
         }
         return downloadListDupeFilter.matches(link);
+    }
+
+    public boolean checkLinkgrabberDupe(final CrawledLink link) {
+        final CompiledLinkgrabberDupeFilter linkgrabberDupeFilter = getLinkgrabberDupeFilter();
+        if (linkgrabberDupeFilter == null) {
+            return true;
+        }
+        return linkgrabberDupeFilter.matches(link);
     }
 
     public boolean checkOrigin(final CrawledLink link) {

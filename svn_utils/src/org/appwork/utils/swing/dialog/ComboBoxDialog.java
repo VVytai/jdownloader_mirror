@@ -181,16 +181,20 @@ public class ComboBoxDialog extends AbstractDialog<Integer> implements ComboBoxD
         if ((getReturnmask() & Dialog.RETURN_OK) == 0) {
             return Integer.valueOf(-1);
         }
+        final int selectedIndex = box.getSelectedIndex();
+        final Object selectedItem = box.getSelectedItem();
+        if (selectedIndex >= 0 && selectedIndex < options.length && options[selectedIndex] == selectedItem) {
+            return Integer.valueOf(selectedIndex);
+        }
         // box's model may have been reordered (eg. by a search/filter combobox), so the selected item's
         // position inside box no longer matches its position inside the original options array.
         // resolve by identity against options instead of trusting box.getSelectedIndex().
-        final Object selected = box.getSelectedItem();
         for (int i = 0; i < options.length; i++) {
-            if (options[i] == selected) {
+            if (options[i] == selectedItem) {
                 return Integer.valueOf(i);
             }
         }
-        return Integer.valueOf(box.getSelectedIndex());
+        return Integer.valueOf(-1);
     }
 
     /*

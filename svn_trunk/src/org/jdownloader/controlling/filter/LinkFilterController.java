@@ -119,6 +119,7 @@ public class LinkFilterController implements LinkCrawlerFilter {
             filter = new ArrayList<LinkgrabberFilterRule>();
         }
         boolean dupesView = false;
+        boolean linkgrabberDupesView = false;
         boolean offlineRule = false;
         boolean directHttpView = false;
         HashSet<String> dupefinder = new HashSet<String>();
@@ -155,6 +156,14 @@ public class LinkFilterController implements LinkCrawlerFilter {
                 dupesView = true;
                 continue;
             }
+            if (LinkgrabberDupesView.ID.equals(rule.getId())) {
+                LinkgrabberDupesView r;
+                newList.add(r = new LinkgrabberDupesView());
+                r.init();
+                r.setEnabled(rule.isEnabled());
+                linkgrabberDupesView = true;
+                continue;
+            }
             newList.add(rule);
         }
         if (!directHttpView) {
@@ -165,6 +174,9 @@ public class LinkFilterController implements LinkCrawlerFilter {
         }
         if (!dupesView) {
             newList.add(new DupesView().init());
+        }
+        if (!linkgrabberDupesView) {
+            newList.add(new LinkgrabberDupesView().init());
         }
         return newList;
     }

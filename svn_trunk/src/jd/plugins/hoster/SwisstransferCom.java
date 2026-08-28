@@ -17,6 +17,7 @@ package jd.plugins.hoster;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,7 +40,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.decrypter.SwisstransferComFolder;
 
-@HostPlugin(revision = "$Revision: 53206 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53264 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { SwisstransferComFolder.class })
 public class SwisstransferCom extends PluginForHost {
     public SwisstransferCom(PluginWrapper wrapper) {
@@ -49,6 +50,8 @@ public class SwisstransferCom extends PluginForHost {
     public static final String PROPERTY_LINK_UUID           = "link_uuid";
     public static final String PROPERTY_CONTAINER_UUID      = "container_uuid";
     public static final String PROPERTY_FILE_ID             = "file_id";
+    public static final String PROPERTY_IS_ZIP_CONTAINER    = "is_zip";
+    public static final String PROPERTY_DOWNLOAD_HOST       = "download_host";
     public static final String PROPERTY_PERMANENTLY_OFFLINE = "permanently_offline";
 
     @Override
@@ -99,17 +102,29 @@ public class SwisstransferCom extends PluginForHost {
         return link.getStringProperty(PROPERTY_FILE_ID);
     }
 
+    private boolean isSingleZippedContaienr(final DownloadLink link) {
+        return link.getBooleanProperty(PROPERTY_IS_ZIP_CONTAINER, false);
+    }
+
     private boolean isPermanentlyOffline(final DownloadLink link) {
         return link.getBooleanProperty(PROPERTY_PERMANENTLY_OFFLINE, false);
     }
 
     @Override
     public boolean isResumeable(final DownloadLink link, final Account account) {
-        return true;
+        if (isSingleZippedContaienr(link)) {
+            return false;
+        } else {
+            return true;
+        }
     }
 
     public int getMaxChunks(final DownloadLink link, final Account account) {
-        return 0;
+        if (isSingleZippedContaienr(link)) {
+            return 1;
+        } else {
+            return 0;
+        }
     }
 
     @Override
@@ -127,10 +142,79 @@ public class SwisstransferCom extends PluginForHost {
 
     @Override
     public void handleFree(final DownloadLink link) throws Exception, PluginException {
-        handleDownload(link);
+        if (link.hasProperty(PROPERTY_DOWNLOAD_HOST)) {
+            handleDownload_D(link);
+        } else {
+            handleDownload_DL(link);
+        }
     }
 
-    private void handleDownload(final DownloadLink link) throws Exception, PluginException {
+    private void handleDownload_D(final DownloadLink link) throws Exception, PluginException {
+        final String containerUUID = link.getStringProperty(PROPERTY_CONTAINER_UUID);
+        final String fileUUID = link.getStringProperty(PROPERTY_FILE_ID);
+        /* Old format: */
+        // final String directurl = String.format("https://www.swisstransfer.com/api/download/%s/%s", linkUUID, fileid);
+        String dllink = "https://" + link.getStringProperty(PROPERTY_DOWNLOAD_HOST) + "/api/download/" + link.getStringProperty(PROPERTY_LINK_UUID);
+        if (!this.isSingleZippedContaienr(link)) {
+            dllink += "/" + link.getStringProperty(PROPERTY_FILE_ID);
+        }
+        final String downloadPassword = link.getDownloadPassword();
+        if (downloadPassword != null) {
+            /* Special token needed to download password protected items */
+            final Map<String, Object> postdata = new HashMap<String, Object>();
+            postdata.put("password", downloadPassword);
+            postdata.put("containerUUID", containerUUID);
+            /* Can be null. If this is null, we got a zip container item. */
+            postdata.put("fileUUID", fileUUID);
+            final Browser brc = br.cloneBrowser();
+            brc.getHeaders().put("Accept", "application/json, text/plain, */*");
+            brc.getHeaders().put("Content-Type", "application/json");
+            brc.getHeaders().put("Origin", "https://www." + getHost());
+            brc.getHeaders().put("Referer", "https://www." + getHost() + "/");
+            brc.postPageRaw("https://www." + getHost() + "/api/generateDownloadToken", JSonStorage.serializeToJson(postdata));
+            /* Example response on invalid password: "{}" (without "") */
+            final String downloadToken = brc.getRegex("^\"([a-f0-9\\-]+)\"$").getMatch(0);
+            if (downloadToken == null) {
+                throw new PluginException(LinkStatus.ERROR_FATAL, "Invalid download password?");
+            }
+            dllink += "?token=" + downloadToken;
+        }
+        dl = jd.plugins.BrowserAdapter.openDownload(br, link, dllink, this.isResumeable(link, null), this.getMaxChunks(link, null));
+        if (!this.looksLikeDownloadableContent(dl.getConnection())) {
+            br.followConnection(true);
+            Map<String, Object> entries = null;
+            try {
+                /* Try to parse json in case we got a json response */
+                entries = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
+            } catch (final Throwable e) {
+            }
+            handleJsonErrorResponse: if (entries != null) {
+                /* Look for errors in parsed json response */
+                final String errormessage = (String) entries.get("message");
+                final Object errorCodeO = entries.get("errorCode");
+                if (errormessage == null) {
+                    /* No response we can work with */
+                    break handleJsonErrorResponse;
+                } else if (errorCodeO == null || !errorCodeO.toString().matches("\\d+")) {
+                    /* No response we can work with */
+                    break handleJsonErrorResponse;
+                }
+                final int errorCode = Integer.parseInt(errorCodeO.toString());
+                if ("Download Number Exceeded".equals(errormessage)) {
+                    /* {"message":"Download Number Exceeded","errorCode":"500"} */
+                    link.setProperty(PROPERTY_PERMANENTLY_OFFLINE, true);
+                    throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND, errormessage);
+                } else {
+                    /* Unknown error */
+                    throw new PluginException(LinkStatus.ERROR_TEMPORARILY_UNAVAILABLE, errorCode + ":" + errormessage);
+                }
+            }
+            this.handleConnectionErrors(br, dl.getConnection());
+        }
+        dl.startDownload();
+    }
+
+    private void handleDownload_DL(final DownloadLink link) throws Exception, PluginException {
         final String linkUUID = link.getStringProperty(PROPERTY_LINK_UUID);
         final String fileUUID = link.getStringProperty(PROPERTY_FILE_ID);
         if (linkUUID == null || fileUUID == null) {
@@ -144,8 +228,8 @@ public class SwisstransferCom extends PluginForHost {
             submitPassword(br, linkUUID, downloadPassword, (String) page.get("version"));
         }
         /*
-         * The website no longer exposes a static download host. Instead a signed, short-lived direct download URL is requested per file
-         * via the API.
+         * The website no longer exposes a static download host. Instead a signed, short-lived direct download URL is requested per file via
+         * the API.
          */
         final Browser brc = br.cloneBrowser();
         brc.getHeaders().put("Accept", "application/json");

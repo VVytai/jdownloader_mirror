@@ -118,6 +118,10 @@ public class URLHelper {
     }
 
     public static String getUrlWithoutParams(final URL url) throws MalformedURLException {
+        /**
+         * TODO: This fails for technically invalid links where the parameters start with "&". <br>
+         * Think about adding support for that special case.
+         */
         return URLHelper.getURL(url, false, false, false).toString();
     }
 

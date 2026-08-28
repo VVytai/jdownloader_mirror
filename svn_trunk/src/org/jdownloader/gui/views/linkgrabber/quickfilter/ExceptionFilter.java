@@ -143,6 +143,9 @@ public class ExceptionFilter extends Filter {
         if (!wrapperRule.checkDownloadListDupe(link)) {
             return false;
         }
+        if (!wrapperRule.checkLinkgrabberDupe(link)) {
+            return false;
+        }
         if (!wrapperRule.checkFileSize(link)) {
             return false;
         }

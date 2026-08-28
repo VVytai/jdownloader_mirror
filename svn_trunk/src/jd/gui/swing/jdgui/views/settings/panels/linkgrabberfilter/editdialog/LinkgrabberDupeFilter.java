@@ -3,12 +3,12 @@ package jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog;
 import org.appwork.storage.Storable;
 import org.jdownloader.gui.translate._GUI;
 
-public class LinkEnabledFilter extends BooleanStatusFilter implements Storable {
-    public LinkEnabledFilter() {
+public class LinkgrabberDupeFilter extends BooleanStatusFilter implements Storable {
+    public LinkgrabberDupeFilter() {
         // Storable
     }
 
-    public LinkEnabledFilter(Matchtype matchType, boolean selected) {
+    public LinkgrabberDupeFilter(Matchtype matchType, boolean selected) {
         super(matchType, selected);
     }
 
@@ -23,10 +23,10 @@ public class LinkEnabledFilter extends BooleanStatusFilter implements Storable {
     }
 
     public static String getTrueLabelStatic() {
-        return _GUI.T.FilterRule_BooleanStatusFilter_generic_enabled();
+        return _GUI.T.FilterRule_LinkgrabberDupeFilter_true();
     }
 
     public static String getFalseLabelStatic() {
-        return _GUI.T.FilterRule_BooleanStatusFilter_generic_disabled();
+        return _GUI.T.FilterRule_LinkgrabberDupeFilter_false();
     }
 }

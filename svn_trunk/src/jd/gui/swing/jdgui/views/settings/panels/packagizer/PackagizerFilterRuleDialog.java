@@ -799,6 +799,7 @@ public class PackagizerFilterRuleDialog extends ConditionDialog<PackagizerRule> 
                 rule.setOriginFilter(getOriginFilter());
                 rule.setLinkEnabledFilter(getLinkEnabledFilter());
                 rule.setDownloadListDupeFilter(getDownloadListDupeFilter());
+                rule.setLinkgrabberDupeFilter(getLinkgrabberDupeFilter());
                 rule.setFiletypeFilter(getFiletypeFilter());
                 rule.setMatchAlwaysFilter(getMatchAlwaysFilter());
                 if (cbDest.isSelected()) {
@@ -855,6 +856,11 @@ public class PackagizerFilterRuleDialog extends ConditionDialog<PackagizerRule> 
         }
     }
 
+    @Override
+    protected boolean isLinkgrabberDupeConditionVisible() {
+        return true;
+    }
+
     private void updateGUI() {
         regexFields.clear();
         setIconKey(rule.getIconKey());
@@ -871,6 +877,7 @@ public class PackagizerFilterRuleDialog extends ConditionDialog<PackagizerRule> 
         setOriginFilter(rule.getOriginFilter());
         setLinkEnabledFilter(rule.getLinkEnabledFilter());
         setDownloadListDupeFilter(rule.getDownloadListDupeFilter());
+        setLinkgrabberDupeFilter(rule.getLinkgrabberDupeFilter());
         txtPackagename.setText(rule.getPackageName());
         txtPackagekey.setText(rule.getPackageKey());
         txtNewFilename.setText(rule.getFilename());

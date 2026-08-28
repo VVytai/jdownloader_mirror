@@ -102,6 +102,7 @@ public class ExceptionsRuleDialog extends ConditionDialog<LinkgrabberFilterRule>
         rule.setOriginFilter(getOriginFilter());
         rule.setLinkEnabledFilter(getLinkEnabledFilter());
         rule.setDownloadListDupeFilter(getDownloadListDupeFilter());
+        rule.setLinkgrabberDupeFilter(getLinkgrabberDupeFilter());
         rule.setFiletypeFilter(getFiletypeFilter());
         rule.setOnlineStatusFilter(getOnlineStatusFilter());
         rule.setPluginStatusFilter(getPluginStatusFilter());
@@ -140,6 +141,7 @@ public class ExceptionsRuleDialog extends ConditionDialog<LinkgrabberFilterRule>
         setOriginFilter(rule.getOriginFilter());
         setLinkEnabledFilter(rule.getLinkEnabledFilter());
         setDownloadListDupeFilter(rule.getDownloadListDupeFilter());
+        setLinkgrabberDupeFilter(rule.getLinkgrabberDupeFilter());
         setOnlineStatusFilter(rule.getOnlineStatusFilter());
         setPluginStatusFilter(rule.getPluginStatusFilter());
         setSourceFilter(rule.getSourceURLFilter());
@@ -149,6 +151,11 @@ public class ExceptionsRuleDialog extends ConditionDialog<LinkgrabberFilterRule>
 
     protected String getIfText() {
         return _GUI.T.ExceptionsRuleDialog_getIfText_();
+    }
+
+    @Override
+    protected boolean isLinkgrabberDupeConditionVisible() {
+        return true;
     }
 
     private void disable(JComponent ret) {

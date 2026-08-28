@@ -34,7 +34,6 @@ import org.appwork.utils.StringUtils;
 import org.appwork.utils.parser.UrlQuery;
 import org.jdownloader.plugins.components.config.CumStConfig;
 import org.jdownloader.plugins.components.config.CumStConfig.TextCrawlMode;
-import org.jdownloader.plugins.config.PluginJsonConfig;
 import org.jdownloader.plugins.controller.LazyPlugin;
 
 import jd.PluginWrapper;
@@ -55,7 +54,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.CumSt;
 
-@DecrypterPlugin(revision = "$Revision: 53249 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53264 $", interfaceVersion = 3, names = {}, urls = {})
 public class CumStCrawler extends PluginForDecrypt {
     public CumStCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -112,7 +111,7 @@ public class CumStCrawler extends PluginForDecrypt {
     /* service = any platform key without slash (e.g. onlyfans, fansly); creator- and post-ids are numeric, dm-ids are uuids. */
     private static final Pattern PATTERN_POST      = Pattern.compile("/creators/([^/]+)/(\\d+)/post/(\\d+).*", Pattern.CASE_INSENSITIVE);
     private static final Pattern PATTERN_DM        = Pattern.compile("/creators/([^/]+)/(\\d+)/dm/([\\w\\-]+).*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-f0-9\\-]+).*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-zA-Z0-9\\-:]+).*", Pattern.CASE_INSENSITIVE);
     /* API- and website path segment for the two supported content types. */
     private static final String  CONTENT_TYPE_POST = "post";
     private static final String  CONTENT_TYPE_DM   = "dm";
@@ -131,7 +130,7 @@ public class CumStCrawler extends PluginForDecrypt {
     private CumStConfig cfg = null;
 
     public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
-        cfg = PluginJsonConfig.get(getConfigInterface());
+        cfg = get(getConfigInterface());
         cl = param;
         if (new Regex(param.getCryptedUrl(), PATTERN_POST).patternFind()) {
             return this.crawlPost(param);
@@ -241,7 +240,7 @@ public class CumStCrawler extends PluginForDecrypt {
         int page = 1;
         pagination: do {
             apiQuery.addAndReplace("o", String.valueOf(offset));
-            getPage(br, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(creatorID) + "/" + endpointPath + "?" + apiQuery.toString());
+            getPage(br, this.getApiBase() + "/" + service + "/user/" + creatorID + "/" + endpointPath + "?" + apiQuery.toString());
             final Map<String, Object> response = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
             final List<Map<String, Object>> posts = (List<Map<String, Object>>) response.get(responseKey);
             if (posts == null || posts.isEmpty()) {
@@ -356,7 +355,7 @@ public class CumStCrawler extends PluginForDecrypt {
             /* Developer mistake */
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
-        getPage(br, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(creatorID) + "/" + contentType + "/" + Encoding.urlEncode(contentID));
+        getPage(br, this.getApiBase() + "/" + service + "/user/" + creatorID + "/" + contentType + "/" + Encoding.urlEncode(contentID));
         final Map<String, Object> content = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
         final HashSet<String> dupes = new HashSet<String>();
         return crawlProcessContentAPI(content, service, creatorID, creatorName, contentType, dupes, cfg.isEnableProfileCrawlerAdvancedDupeFiltering());
@@ -571,7 +570,7 @@ public class CumStCrawler extends PluginForDecrypt {
                 return username;
             }
             final Browser brc = br.cloneBrowser();
-            getPage(brc, this.getApiBase() + "/" + service + "/user/" + Encoding.urlEncode(creatorID) + "/profile");
+            getPage(brc, this.getApiBase() + "/" + service + "/user/" + creatorID + "/profile");
             final Map<String, Object> entries = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
             username = StringUtils.valueOfOrNull(entries.get("name"));
             if (StringUtils.isEmpty(username)) {

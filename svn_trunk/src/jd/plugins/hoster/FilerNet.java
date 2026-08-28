@@ -58,7 +58,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53236 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53263 $", interfaceVersion = 2, names = {}, urls = {})
 public class FilerNet extends PluginForHost {
     private static final int    STATUSCODE_APIDISABLED                             = 400;
     private static final String ERRORMESSAGE_APIDISABLEDTEXT                       = "API is disabled, please wait or use filer.net in your browser";
@@ -447,35 +447,8 @@ public class FilerNet extends PluginForHost {
                 if (trafficUsed != null) {
                     ai.setTrafficMax(trafficLeft.longValue() + trafficUsed.longValue());
                 }
-                if (trafficLeft.longValue() < 0) {
-                    /* 2026-08-25: Small workaround to display negative traffic in GUI. */
-                    final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
-                    final long negativeTrafficBytes = Math.abs(trafficLeft.longValue());
-                    final String negativeTrafficFormatted = SIZEUNIT.formatValue(maxSizeUnit, negativeTrafficBytes);
-                    /*
-                     * Negative traffic recovers over time: 50 GB is added back every 24 hours (which equals 1 GB every 28.8 minutes).
-                     * Calculate how long we need to wait until the account has positive traffic again.
-                     */
-                    final long bytesPerGB = 1024 * 1024 * 1024l;
-                    /* 50 GB every 24 hours equals 1 GB every 1728000 ms (28.8 minutes). */
-                    final long millisPerGB = TimeUnit.HOURS.toMillis(24) / 50;
-                    /*
-                     * Divide the 24h interval by 50 up front so the smaller millisPerGB value enters the multiplication instead of the
-                     * large 24h value. This keeps full byte precision while pushing the long overflow far out of any realistic traffic
-                     * range.
-                     */
-                    final long recoveryMillis = negativeTrafficBytes * millisPerGB / bytesPerGB;
-                    /* Build a human readable ETA (hours and minutes) from the full recovery time. */
-                    final long etaTotalMinutes = recoveryMillis / TimeUnit.MINUTES.toMillis(1);
-                    final long etaHours = etaTotalMinutes / 60;
-                    final long etaMinutes = etaTotalMinutes % 60;
-                    /*
-                     * Do not block the account for the full recovery time: wait at most 30 minutes (and at least 5 minutes) before
-                     * re-checking, but display the full ETA in the error message.
-                     */
-                    final long waitMillis = Math.max(TimeUnit.MINUTES.toMillis(5), Math.min(recoveryMillis, TimeUnit.MINUTES.toMillis(30)));
-                    throw new AccountUnavailableException("Kein Traffic übrig: -" + negativeTrafficFormatted + " | eta " + etaHours + "h:" + etaMinutes + "m", waitMillis);
-                }
+                /* 2026-08-25: Small workaround to display negative traffic in GUI. */
+                throwExceptionOnNegativeTraffic(trafficLeft.longValue());
             }
             final Long validUntil = (Long) ReflectionUtils.cast(data.get("until"), Long.class);
             if (validUntil != null) {
@@ -506,6 +479,53 @@ public class FilerNet extends PluginForHost {
             ai.setTrafficMax(134217728000l/* SizeFormatter.getSize("125gb") */);
         }
         return ai;
+    }
+
+    /**
+     * Throws an {@link AccountUnavailableException} with a human readable recovery ETA if the given traffic_left value is negative.
+     * Returns normally otherwise. </br>
+     * Negative traffic recovers over time: 50 GB is added back every 24 hours (which equals 1 GB every 28.8 minutes).
+     */
+    private void throwExceptionOnNegativeTraffic(final long trafficLeft) throws AccountUnavailableException {
+        if (trafficLeft >= 0) {
+            return;
+        }
+        final SIZEUNIT maxSizeUnit = (SIZEUNIT) CFG_GUI.MAX_SIZE_UNIT.getValue();
+        final long negativeTrafficBytes = Math.abs(trafficLeft);
+        final String negativeTrafficFormatted = SIZEUNIT.formatValue(maxSizeUnit, negativeTrafficBytes);
+        /* Calculate how long we need to wait until the account has positive traffic again. */
+        final long bytesPerGB = 1024 * 1024 * 1024l;
+        /* 50 GB every 24 hours equals 1 GB every 1728000 ms (28.8 minutes). */
+        final long millisPerGB = TimeUnit.HOURS.toMillis(24) / 50;
+        /*
+         * Divide the 24h interval by 50 up front so the smaller millisPerGB value enters the multiplication instead of the large 24h value.
+         * This keeps full byte precision while pushing the long overflow far out of any realistic traffic range.
+         */
+        final long recoveryMillis = negativeTrafficBytes * millisPerGB / bytesPerGB;
+        /* Build a human readable ETA (hours and minutes) from the full recovery time. */
+        final long etaTotalMinutes = recoveryMillis / TimeUnit.MINUTES.toMillis(1);
+        final long etaHours = etaTotalMinutes / 60;
+        final long etaMinutes = etaTotalMinutes % 60;
+        /*
+         * Do not block the account for the full recovery time: wait at most 30 minutes (and at least 5 minutes) before re-checking, but
+         * display the full ETA in the error message.
+         */
+        final long waitMillis = Math.max(TimeUnit.MINUTES.toMillis(5), Math.min(recoveryMillis, TimeUnit.MINUTES.toMillis(30)));
+        throw new AccountUnavailableException("Kein Traffic übrig: -" + negativeTrafficFormatted + " | eta " + etaHours + "h:" + etaMinutes + "m", waitMillis);
+    }
+
+    /**
+     * If the account is in the negative traffic range, throws an {@link AccountUnavailableException} with the same recovery ETA message as
+     * {@link #fetchAccountInfo(Account)}. Returns normally if there is no {@link AccountInfo} yet or the traffic is not negative. </br>
+     * The remaining traffic is read from the existing {@link AccountInfo} (note: AccountInfo may currently clamp negative values to zero, in
+     * which case this check simply does nothing).
+     */
+    private void checkNegativeTrafficAndThrow(final Account account) throws AccountUnavailableException {
+        final AccountInfo ai = account.getAccountInfo();
+        if (ai == null) {
+            return;
+        }
+        throwExceptionOnNegativeTraffic(ai.getTrafficLeft());
     }
 
     @Override
@@ -653,8 +673,13 @@ public class FilerNet extends PluginForHost {
                 if (account == null || AccountType.FREE.equals(account.getType())) {
                     throw new AccountRequiredException(status);
                 } else {
+                    /*
+                     * Error 504 = traffic limit reached. If the account is in the negative traffic range, display the same detailed message
+                     * (with recovery ETA) as fetchAccountInfo does instead of the generic traffic limit message.
+                     */
+                    checkNegativeTrafficAndThrow(account);
                     if (StringUtils.isEmpty(status)) {
-                        throw new AccountUnavailableException("Traffic limit reached", 60 * 60 * 1000l);
+                        throw new AccountUnavailableException("Error 504: Traffic limit reached", 30 * 60 * 1000l);
                     } else {
                         throw new AccountUnavailableException(status, 60 * 60 * 1000l);
                     }

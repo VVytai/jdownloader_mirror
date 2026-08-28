@@ -66,10 +66,30 @@ public class UrlQueryTest extends AWTest {
             assertEquals(parsed.list().size(), 1);
         }
         {
-            UrlQuery parsed = UrlQuery.parse("domain_with_underscore.de/?query=true");
-            assertEquals(parsed.get("query"), "true");
-            assertEquals(parsed.list().size(), 1);
+            UrlQuery parsed = UrlQuery.parse("domain_with_underscore.de/?A=1&a=true&B=2&b=false");
+            assertEquals(parsed.get("A"), "1");
+            assertEquals(parsed.get("a"), "true");
+            assertEquals(parsed.get("B"), "2");
+            assertEquals(parsed.get("b"), "false");
+            assertEquals(parsed.list().size(), 4);
         }
+        {
+            UrlQuery parsed = UrlQuery.parse("?A=1&a=true&B=2&b=false");
+            assertEquals(parsed.get("A"), "1");
+            assertEquals(parsed.get("a"), "true");
+            assertEquals(parsed.get("B"), "2");
+            assertEquals(parsed.get("b"), "false");
+            assertEquals(parsed.list().size(), 4);
+        }
+        {
+            UrlQuery parsed = UrlQuery.parse("A=1&a=true&B=2&b=false");
+            assertEquals(parsed.get("A"), "1");
+            assertEquals(parsed.get("a"), "true");
+            assertEquals(parsed.get("B"), "2");
+            assertEquals(parsed.get("b"), "false");
+            assertEquals(parsed.list().size(), 4);
+        }
+
         {
             UrlQuery parsed = UrlQuery.parse("st=0&rt=SO&pv=12&cv=20210716001&pkh=c4622595eb512a&app=AWAdminTool&os=WINDOWS&osr=WINDOWS_10&arch=X86&os64=1&jvm64=1&java=18261012&uid=&hidNew=027ef5524a37b04ac638660eac27102f38811af717d1b99eca490a06bf535de&hidSta=0044f0990e5da993d314db308328261e140782fb32db43a&ct=ALPHA&rg=null&cBuild=&gui=0&repos=&mcnt=311820&rcnt=1494&scnt=1115&stm=1643707780775&bc=46&rc=0&bt=1640685241000&ut=3297989953&sit=1595088146755&cycle=739&csVer=1639060415000&csDep=&csPro=&awfcxz=1&rev=46&lng=en&chlg=1&jdiff=1&dst=-1&dedup=INTER&1643983194392.1643983195370");
             // System.out.println(JSonStorage.serializeToJson(JSonStorage.serializeToJson(parsed.list())));

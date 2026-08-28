@@ -14,6 +14,7 @@ import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.Boo
 import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.ConditionFilter;
 import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.DownloadListDupeFilter;
 import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.LinkEnabledFilter;
+import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.LinkgrabberDupeFilter;
 import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.OnlineStatusFilter;
 import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.OriginFilter;
 import jd.gui.swing.jdgui.views.settings.panels.linkgrabberfilter.editdialog.PluginStatusFilter;
@@ -61,6 +62,7 @@ public abstract class FilterRule extends AbstractJsonData implements Storable {
 
     private LinkEnabledFilter       linkEnabledFilter;
     private DownloadListDupeFilter  downloadListDupeFilter;
+    private LinkgrabberDupeFilter   linkgrabberDupeFilter;
 
     public LinkEnabledFilter getLinkEnabledFilter() {
         if (linkEnabledFilter == null) {
@@ -82,6 +84,17 @@ public abstract class FilterRule extends AbstractJsonData implements Storable {
 
     public void setDownloadListDupeFilter(DownloadListDupeFilter downloadListDupeFilter) {
         this.downloadListDupeFilter = downloadListDupeFilter;
+    }
+
+    public LinkgrabberDupeFilter getLinkgrabberDupeFilter() {
+        if (linkgrabberDupeFilter == null) {
+            linkgrabberDupeFilter = new LinkgrabberDupeFilter();
+        }
+        return linkgrabberDupeFilter;
+    }
+
+    public void setLinkgrabberDupeFilter(LinkgrabberDupeFilter linkgrabberDupeFilter) {
+        this.linkgrabberDupeFilter = linkgrabberDupeFilter;
     }
 
     /**
@@ -219,7 +232,7 @@ public abstract class FilterRule extends AbstractJsonData implements Storable {
      * @return
      */
     public boolean _isValid() {
-        return getPackagenameFilter().isEnabled() || getCommentFilter().isEnabled() || getMatchAlwaysFilter().isEnabled() || getFilenameFilter().isEnabled() || getFilesizeFilter().isEnabled() || getFiletypeFilter().isEnabled() || getHosterURLFilter().isEnabled() || getSourceURLFilter().isEnabled() || getOriginFilter().isEnabled() || getLinkEnabledFilter().isEnabled() || getDownloadListDupeFilter().isEnabled() || getOnlineStatusFilter().isEnabled() || getPluginStatusFilter().isEnabled();
+        return getPackagenameFilter().isEnabled() || getCommentFilter().isEnabled() || getMatchAlwaysFilter().isEnabled() || getFilenameFilter().isEnabled() || getFilesizeFilter().isEnabled() || getFiletypeFilter().isEnabled() || getHosterURLFilter().isEnabled() || getSourceURLFilter().isEnabled() || getOriginFilter().isEnabled() || getLinkEnabledFilter().isEnabled() || getDownloadListDupeFilter().isEnabled() || getLinkgrabberDupeFilter().isEnabled() || getOnlineStatusFilter().isEnabled() || getPluginStatusFilter().isEnabled();
     }
 
     public String toString(CrawledLink link) {
@@ -239,6 +252,9 @@ public abstract class FilterRule extends AbstractJsonData implements Storable {
             }
             if (getDownloadListDupeFilter().isEnabled()) {
                 cond.add(downloadListDupeFilter.toString());
+            }
+            if (getLinkgrabberDupeFilter().isEnabled()) {
+                cond.add(linkgrabberDupeFilter.toString());
             }
             if (getPluginStatusFilter().isEnabled()) {
                 cond.add(pluginStatusFilter.toString());

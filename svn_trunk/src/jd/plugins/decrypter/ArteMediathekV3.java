@@ -58,7 +58,7 @@ import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.ArteTv;
 import jd.plugins.hoster.DirectHTTP;
 
-@DecrypterPlugin(revision = "$Revision: 53198 $", interfaceVersion = 4, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53264 $", interfaceVersion = 4, names = {}, urls = {})
 public class ArteMediathekV3 extends PluginForDecrypt {
     public ArteMediathekV3(PluginWrapper wrapper) {
         super(wrapper);
@@ -266,6 +266,10 @@ public class ArteMediathekV3 extends PluginForDecrypt {
         final Map<String, Object> player = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
         String originalVersionAudioLanguage = null;
         final List<Map<String, Object>> streams = (List<Map<String, Object>>) JavaScriptEngineFactory.walkJson(player, "data/attributes/streams");
+        final Map<String, Object> error = (Map<String, Object>) JavaScriptEngineFactory.walkJson(player, "data/attributes/error");
+        if (streams.isEmpty() && error != null && error.containsKey("code")) {
+            logger.info("Cannot crawl HLS:" + error.get("code") + "|" + error.get("title"));
+        }
         for (final Map<String, Object> stream : streams) {
             final List<Map<String, Object>> versions = (List<Map<String, Object>>) stream.get("versions");
             originalVersionAudioLanguage: if (versions != null && originalVersionAudioLanguage == null) {

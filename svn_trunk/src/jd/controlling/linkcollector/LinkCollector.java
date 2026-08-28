@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -487,31 +488,39 @@ public class LinkCollector extends PackageController<CrawledPackage, CrawledLink
         eventsender.fireEvent(new LinkCollectorEvent(this, LinkCollectorEvent.TYPE.CRAWLER_STARTED, crawledLinkCrawler, QueuePriority.NORM));
     }
 
-    private transient LinkCollectorEventSender                         eventsender           = new LinkCollectorEventSender();
-    public final ScheduledExecutorService                              TIMINGQUEUE           = DelayedRunnable.getNewScheduledExecutorService();
-    public static SingleReachableState                                 CRAWLERLIST_LOADED    = new SingleReachableState("CRAWLERLIST_COMPLETE");
-    private static LinkCollector                                       INSTANCE              = new LinkCollector();
-    private volatile LinkChecker<CrawledLink>                          defaultLinkChecker    = null;
+    private transient LinkCollectorEventSender                         eventsender              = new LinkCollectorEventSender();
+    public final ScheduledExecutorService                              TIMINGQUEUE              = DelayedRunnable.getNewScheduledExecutorService();
+    public static SingleReachableState                                 CRAWLERLIST_LOADED       = new SingleReachableState("CRAWLERLIST_COMPLETE");
+    private static LinkCollector                                       INSTANCE                 = new LinkCollector();
+    private volatile LinkChecker<CrawledLink>                          defaultLinkChecker       = null;
     /**
      * NOTE: only access these fields inside the IOEQ
      */
-    private final HashMap<String, WeakReference<CrawledLink>>          dupeCheckMap          = new HashMap<String, WeakReference<CrawledLink>>();
-    private final Map<CrawledPackageMappingID, CrawledPackage>         packageMapIDtoPackage = new HashMap<CrawledPackageMappingID, CrawledPackage>();
-    private final Map<CrawledPackage, CrawledPackageMappingID>         packageMapPackageToID = new HashMap<CrawledPackage, CrawledPackageMappingID>();
-    private final List<CrawledLink>                                    filteredStuff         = new CopyOnWriteArrayList<CrawledLink>();
+    private final HashMap<String, WeakReference<CrawledLink>>          dupeCheckMap             = new HashMap<String, WeakReference<CrawledLink>>();
+    private final Map<CrawledPackageMappingID, CrawledPackage>         packageMapIDtoPackage    = new HashMap<CrawledPackageMappingID, CrawledPackage>();
+    private final Map<CrawledPackage, CrawledPackageMappingID>         packageMapPackageToID    = new HashMap<CrawledPackage, CrawledPackageMappingID>();
+    private final List<CrawledLink>                                    filteredStuff            = new CopyOnWriteArrayList<CrawledLink>();
     private volatile ExtractionExtension                               archiver;
     private final DelayedRunnable                                      asyncSaving;
     protected volatile CrawledPackage                                  offlinePackage;
     protected volatile CrawledPackage                                  variousPackage;
     protected volatile CrawledPackage                                  permanentofflinePackage;
-    private final CopyOnWriteArrayList<File>                           linkcollectorLists    = new CopyOnWriteArrayList<File>();
-    private final HashMap<CrawledPackageMappingID, List<CrawledLink>>  offlineMap            = new HashMap<CrawledPackageMappingID, List<CrawledLink>>();
-    private final HashMap<CrawledPackageMappingID, List<CrawledLink>>  variousMap            = new HashMap<CrawledPackageMappingID, List<CrawledLink>>();
-    private final HashMap<CrawledPackageMappingID, List<CrawledLink>>  badMappingMap         = new HashMap<CrawledPackageMappingID, List<CrawledLink>>();
-    private final WeakHashMap<CrawledPackage, HashMap<Object, Object>> autoRenameCache       = new WeakHashMap<CrawledPackage, HashMap<Object, Object>>();
+    private final CopyOnWriteArrayList<File>                           linkcollectorLists       = new CopyOnWriteArrayList<File>();
+    private final HashMap<CrawledPackageMappingID, List<CrawledLink>>  offlineMap               = new HashMap<CrawledPackageMappingID, List<CrawledLink>>();
+    private final HashMap<CrawledPackageMappingID, List<CrawledLink>>  variousMap               = new HashMap<CrawledPackageMappingID, List<CrawledLink>>();
+    private final HashMap<CrawledPackageMappingID, List<CrawledLink>>  badMappingMap            = new HashMap<CrawledPackageMappingID, List<CrawledLink>>();
+    private final WeakHashMap<CrawledPackage, HashMap<Object, Object>> autoRenameCache          = new WeakHashMap<CrawledPackage, HashMap<Object, Object>>();
     private final DelayedRunnable                                      asyncCacheCleanup;
     private final AutoStartManager                                     autoStartManager;
     private final boolean                                              isDupeManagerEnabled;
+    /**
+     * Cache for the "Already in Linkgrabber" view: identity set of all CrawledLinks that appear more than once in the linkgrabber, except
+     * the first (topmost) occurrence of each. Only computed while the dupe manager is disabled. null means "not computed / invalidated";
+     * recomputed lazily on the next access via {@link #isLinkgrabberDupe(CrawledLink)}. Access is guarded by
+     * {@link #linkgrabberDupeCacheLock}.
+     */
+    private volatile Set<CrawledLink>                                  linkgrabberDupeCache     = null;
+    private final Object                                               linkgrabberDupeCacheLock = new Object();
 
     private LinkCollector() {
         autoStartManager = new AutoStartManager();
@@ -611,24 +620,29 @@ public class LinkCollector extends PackageController<CrawledPackage, CrawledLink
             }
 
             public void onLinkCollectorStructureRefresh(LinkCollectorEvent event) {
+                invalidateLinkgrabberDupeCache();
                 asyncSaving.run();
             }
 
             public void onLinkCollectorLinkAdded(LinkCollectorEvent event, CrawledLink parameter) {
+                invalidateLinkgrabberDupeCache();
                 asyncCacheCleanup.run();
             }
 
             @Override
             public void onLinkCollectorDupeAdded(LinkCollectorEvent event, CrawledLink parameter) {
+                invalidateLinkgrabberDupeCache();
             }
 
             @Override
             public void onLinkCollectorContentRemoved(LinkCollectorEvent event) {
+                invalidateLinkgrabberDupeCache();
                 asyncSaving.run();
             }
 
             @Override
             public void onLinkCollectorContentAdded(LinkCollectorEvent event) {
+                invalidateLinkgrabberDupeCache();
             }
 
             @Override
@@ -3489,6 +3503,70 @@ public class LinkCollector extends PackageController<CrawledPackage, CrawledLink
         return isDupeManagerEnabled;
     }
 
+    /**
+     * Drops the cached "Already in Linkgrabber" duplicate set so it is recomputed on the next access. Cheap (only nulls a volatile field);
+     * the actual (potentially expensive) recomputation happens lazily.
+     */
+    private void invalidateLinkgrabberDupeCache() {
+        linkgrabberDupeCache = null;
+    }
+
+    /**
+     * Returns true if the given link is a duplicate inside the linkgrabber, i.e. it shares its linkID with an earlier (topmost-first, in
+     * the real linkgrabber order) link and is therefore NOT the first occurrence.
+     *
+     * Always returns false while the dupe manager is enabled, because in that mode duplicates are never added to the linkgrabber in the
+     * first place. The result is backed by a lazily computed, invalidation-based cache so that the per-link lookup used by the view filter
+     * stays cheap even for large lists.
+     */
+    public boolean isLinkgrabberDupe(final CrawledLink link) {
+        if (link == null || isDupeManagerEnabled()) {
+            return false;
+        }
+        // Double-checked locking. linkgrabberDupeCache is volatile and can be reset to null at any time by another thread
+        // (cache invalidation on structure/content changes), so we read it once into a local variable and work with that
+        // stable snapshot from here on.
+        // First (unlocked) read: the fast path. In the common case the cache already exists and we skip the lock entirely,
+        // because acquiring the lock on every lookup would be needlessly expensive.
+        Set<CrawledLink> cache = linkgrabberDupeCache;
+        if (cache == null) {
+            synchronized (linkgrabberDupeCacheLock) {
+                // Second read, now inside the lock: this is the correctness check. Between the first read and acquiring the
+                // lock another thread may already have computed and stored the set. Re-reading the current value avoids a
+                // redundant (expensive) second computation - we reuse the other thread's result instead.
+                cache = linkgrabberDupeCache;
+                if (cache == null) {
+                    cache = computeLinkgrabberDupes();
+                    linkgrabberDupeCache = cache;
+                }
+            }
+        }
+        return cache.contains(link);
+    }
+
+    /**
+     * Computes the identity set of all duplicated links except the first occurrence of each, using the real linkgrabber order (package
+     * order, then child order) to decide which occurrence is "first". Not the current table sorting.
+     */
+    private Set<CrawledLink> computeLinkgrabberDupes() {
+        final Set<CrawledLink> dupes = Collections.newSetFromMap(new IdentityHashMap<CrawledLink, Boolean>());
+        final HashSet<String> seen = new HashSet<String>();
+        for (final CrawledPackage pkg : getPackagesCopy()) {
+            final boolean readL = pkg.getModifyLock().readLock();
+            try {
+                for (final CrawledLink link : pkg.getChildren()) {
+                    final String linkID = link.getLinkID();
+                    if (!seen.add(linkID)) {
+                        dupes.add(link);
+                    }
+                }
+            } finally {
+                pkg.getModifyLock().readUnlock(readL);
+            }
+        }
+        return dupes;
+    }
+
     private CrawledLink putCrawledLinkByLinkID(final String linkID, final CrawledLink link) {
         if (!isDupeManagerEnabled()) {
             return null;
@@ -3540,12 +3618,11 @@ public class LinkCollector extends PackageController<CrawledPackage, CrawledLink
             protected CrawledLink run() throws RuntimeException {
                 if (LinkCollector.getInstance().containsLinkId(cl.getLinkID())) {
                     return null;
-                } else {
-                    final ArrayList<CrawledLink> list = new ArrayList<CrawledLink>();
-                    list.add(cl);
-                    LinkCollector.getInstance().moveOrAddAt(link.getParentNode(), list, link.getParentNode().indexOf(link) + 1);
-                    return cl;
                 }
+                final ArrayList<CrawledLink> list = new ArrayList<CrawledLink>();
+                list.add(cl);
+                LinkCollector.getInstance().moveOrAddAt(link.getParentNode(), list, link.getParentNode().indexOf(link) + 1);
+                return cl;
             }
         });
     }

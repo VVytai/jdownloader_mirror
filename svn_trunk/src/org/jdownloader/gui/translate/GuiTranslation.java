@@ -6896,9 +6896,18 @@ public interface GuiTranslation extends TranslateInterface {
     @Default(lngs = { "en" }, values = { "Link" })
     String FilterRuleDialog_layoutDialogContent_lbl_downloadlistdupe();
 
+    @Default(lngs = { "en" }, values = { "Link" })
+    String FilterRuleDialog_layoutDialogContent_lbl_linkgrabberdupe();
+
     @Default(lngs = { "en" }, values = { "is already in downloadlist" })
     String FilterRule_DownloadListDupeFilter_true();
 
     @Default(lngs = { "en" }, values = { "is not in downloadlist" })
     String FilterRule_DownloadListDupeFilter_false();
+
+    @Default(lngs = { "en" }, values = { "is a duplicate in linkgrabber" })
+    String FilterRule_LinkgrabberDupeFilter_true();
+
+    @Default(lngs = { "en" }, values = { "is not a duplicate in linkgrabber" })
+    String FilterRule_LinkgrabberDupeFilter_false();
 }

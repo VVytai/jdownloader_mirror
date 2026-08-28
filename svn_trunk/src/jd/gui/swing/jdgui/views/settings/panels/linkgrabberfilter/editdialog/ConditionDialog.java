@@ -220,6 +220,14 @@ public abstract class ConditionDialog<T> extends AbstractDialog<T> {
         cobDownloadListDupe.setSelectedIndex(f.getMatchType().ordinal());
     }
 
+    public void setLinkgrabberDupeFilter(LinkgrabberDupeFilter f) {
+        if (f == null) {
+            return;
+        }
+        cbLinkgrabberDupe.setSelected(f.isEnabled());
+        cobLinkgrabberDupe.setSelectedIndex(f.getMatchType().ordinal());
+    }
+
     public void setOriginFilter(OriginFilter originFilter) {
         if (originFilter == null) {
             return;
@@ -239,6 +247,10 @@ public abstract class ConditionDialog<T> extends AbstractDialog<T> {
 
     public DownloadListDupeFilter getDownloadListDupeFilter() {
         return new DownloadListDupeFilter(Matchtype.values()[cobDownloadListDupe.getSelectedIndex()], cbDownloadListDupe.isSelected());
+    }
+
+    public LinkgrabberDupeFilter getLinkgrabberDupeFilter() {
+        return new LinkgrabberDupeFilter(Matchtype.values()[cobLinkgrabberDupe.getSelectedIndex()], cbLinkgrabberDupe.isSelected());
     }
 
     public FilesizeFilter getFilersizeFilter() {
@@ -421,6 +433,8 @@ public abstract class ConditionDialog<T> extends AbstractDialog<T> {
     private ExtCheckBox                               cbLinkEnabled;
     private JComboBox                                 cobDownloadListDupe;
     private ExtCheckBox                               cbDownloadListDupe;
+    private JComboBox                                 cobLinkgrabberDupe;
+    private ExtCheckBox                               cbLinkgrabberDupe;
     protected ExtCheckBox                             cbNegate;
 
     public boolean isNegated() {
@@ -477,6 +491,15 @@ public abstract class ConditionDialog<T> extends AbstractDialog<T> {
         // } catch (Throwable e) {
         //
         // }
+    }
+
+    /**
+     * Whether the "is (not) a duplicate in linkgrabber" condition is offered in this dialog. This condition is only meaningful
+     * as a view (accept/exceptions rule) over the current linkgrabber contents, so it is hidden in the deny-filter dialog and
+     * only enabled for the exceptions dialog.
+     */
+    protected boolean isLinkgrabberDupeConditionVisible() {
+        return false;
     }
 
     @Override
@@ -615,6 +638,31 @@ public abstract class ConditionDialog<T> extends AbstractDialog<T> {
             }
         };
         cobDownloadListDupe.addMouseListener(ml);
+        if (isLinkgrabberDupeConditionVisible()) {
+            // linkgrabber dupe status. Only meaningful as a view (accept/exceptions rule) over the current linkgrabber
+            // contents, so it is not offered in the deny-filter dialog.
+            cobLinkgrabberDupe = new JComboBox(new String[] { LinkgrabberDupeFilter.getTrueLabelStatic(), LinkgrabberDupeFilter.getFalseLabelStatic() });
+            cbLinkgrabberDupe = new ExtCheckBox(cobLinkgrabberDupe) {
+                @Override
+                public void updateDependencies() {
+                    super.updateDependencies();
+                }
+            };
+            panel.add(cbLinkgrabberDupe);
+            panel.add(new JLabel(_GUI.T.FilterRuleDialog_layoutDialogContent_lbl_linkgrabberdupe()));
+            panel.add(cobLinkgrabberDupe, "spanx,pushx,growx");
+            ml = new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    if (!cbLinkgrabberDupe.isEnabled()) {
+                        // field is disabled (e.g. static/predefined rule) -> clicking must not re-enable it
+                        return;
+                    }
+                    cbLinkgrabberDupe.setSelected(true);
+                }
+            };
+            cobLinkgrabberDupe.addMouseListener(ml);
+        }
         cobFilename = new JComboBox(new String[] { _GUI.T.FilterRuleDialog_layoutDialogContent_contains(), _GUI.T.FilterRuleDialog_layoutDialogContent_equals(), _GUI.T.FilterRuleDialog_layoutDialogContent_contains_not(), _GUI.T.FilterRuleDialog_layoutDialogContent_equals_not() });
         txtFilename = new ExtTextField() {
             @Override

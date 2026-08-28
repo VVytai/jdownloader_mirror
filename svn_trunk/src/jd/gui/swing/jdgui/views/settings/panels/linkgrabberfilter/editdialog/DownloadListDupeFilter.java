@@ -14,12 +14,12 @@ public class DownloadListDupeFilter extends BooleanStatusFilter implements Stora
 
     @Override
     protected String getTrueLabel() {
-        return _GUI.T.FilterRule_DownloadListDupeFilter_true();
+        return getTrueLabelStatic();
     }
 
     @Override
     protected String getFalseLabel() {
-        return _GUI.T.FilterRule_DownloadListDupeFilter_false();
+        return getFalseLabelStatic();
     }
 
     public static String getTrueLabelStatic() {

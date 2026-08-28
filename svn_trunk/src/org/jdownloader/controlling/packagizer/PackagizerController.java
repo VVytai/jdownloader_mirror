@@ -929,6 +929,9 @@ public class PackagizerController implements PackagizerInterface, FileCreationLi
                 if (!lgr.checkDownloadListDupe(link)) {
                     continue nextRule;
                 }
+                if (!lgr.checkLinkgrabberDupe(link)) {
+                    continue nextRule;
+                }
                 if (!lgr.checkFileSize(link)) {
                     continue nextRule;
                 }
@@ -1350,6 +1353,9 @@ public class PackagizerController implements PackagizerInterface, FileCreationLi
                     continue;
                 }
                 if (!lgr.checkDownloadListDupe(dummyLink)) {
+                    continue;
+                }
+                if (!lgr.checkLinkgrabberDupe(dummyLink)) {
                     continue;
                 }
                 if (!lgr.checkFileSize(dummyLink)) {

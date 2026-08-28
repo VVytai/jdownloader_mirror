@@ -23,6 +23,7 @@ import java.util.regex.Pattern;
 
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.formatter.SizeFormatter;
+import org.appwork.utils.net.URLHelper;
 import org.appwork.utils.parser.UrlQuery;
 
 import jd.PluginWrapper;
@@ -39,7 +40,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.download.HashInfo;
 
-@HostPlugin(revision = "$Revision: 53258 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53263 $", interfaceVersion = 3, names = {}, urls = {})
 public class AxfcNet extends PluginForHost {
     public AxfcNet(PluginWrapper wrapper) {
         super(wrapper);
@@ -78,12 +79,28 @@ public class AxfcNet extends PluginForHost {
     public static String[] getAnnotationUrls() {
         final List<String> ret = new ArrayList<String>();
         for (final String[] domains : getPluginDomains()) {
-            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + PATTERN_FILE.pattern());
+            /* 2026-08-28: Also allow subdomains like "www2." RE forum 98943 */
+            ret.add("https?://(?:www\\d*\\.)?" + buildHostsPatternPart(domains) + PATTERN_FILE.pattern());
         }
         return ret.toArray(new String[0]);
     }
 
-    private static final Pattern PATTERN_FILE = Pattern.compile("/(?:u|uploader/[^/]+/so)/(\\d+)[^/]*");
+    private static final Pattern PATTERN_FILE = Pattern.compile("/(u|uploader/[^/]+/so)/(\\d+)[^/]*");
+
+    @Override
+    public String getPluginContentURL(final DownloadLink link) {
+        final String pw = link.getDownloadPassword();
+        if (pw != null) {
+            /**
+             * Assume that we got a valid download password -> Return url with password parameter. <br>
+             * This also fixes problems with user-added invalid URLs where parameters start with "&".
+             */
+            final Regex urlinfo = new Regex(link.getPluginPatternMatcher(), PATTERN_FILE);
+            final String url = "https://" + this.getHost() + "/" + urlinfo.getMatch(0) + "/" + urlinfo.getMatch(1) + "?key=" + Encoding.urlEncode(pw);
+            return url;
+        }
+        return super.getPluginContentURL(link);
+    }
 
     @Override
     public String getLinkID(final DownloadLink link) {
@@ -96,7 +113,7 @@ public class AxfcNet extends PluginForHost {
     }
 
     private String getFID(final DownloadLink link) {
-        return new Regex(link.getPluginPatternMatcher(), PATTERN_FILE).getMatch(0);
+        return new Regex(link.getPluginPatternMatcher(), PATTERN_FILE).getMatch(1);
     }
 
     @Override
@@ -139,13 +156,28 @@ public class AxfcNet extends PluginForHost {
         }
     }
 
+    private String getUrlWithoutParams(String url) {
+        try {
+            String urlnew = URLHelper.getUrlWithoutParams(url);
+            /* Cover edge case: parameters starting with "&" -> cut off at the first "&" as that marks the beginning of the parameters. */
+            final int andIndex = urlnew.indexOf("&");
+            if (andIndex != -1) {
+                return urlnew.substring(0, andIndex);
+            }
+            return urlnew;
+        } catch (final MalformedURLException e) {
+            return url;
+        }
+    }
+
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws IOException, PluginException {
         this.setBrowserExclusive();
-        br.getPage(link.getPluginPatternMatcher());
+        /* Important: Use URL without parameters here to avoid http response 403 due to invalid content in "key" parameter */
+        br.getPage(getUrlWithoutParams(link.getPluginPatternMatcher()));
         if (br.getHttpConnection().getResponseCode() == 403) {
             /* Invalid url e.g. /u/3791809&key=%E3%81%BC%E3%81%9F%E3%82%82%E3%81%A1.%20Read%20More.%20%5B0%5D%20Likes.%20Rating:%20N */
-            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND, "Invalid url");
         }
         if (br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
@@ -171,14 +203,20 @@ public class AxfcNet extends PluginForHost {
         final String hash_md5 = br.getRegex("'MD5 HASH',\\s*'([a-f0-9]{32})").getMatch(0);
         if (hash_md5 != null) {
             hashInfos.add(HashInfo.newInstanceSafe(hash_md5, HashInfo.TYPE.MD5));
+        } else {
+            logger.info("Failed to find hash_md5");
         }
         final String hash_sha1 = br.getRegex("'SHA-1 HASH',\\s*'([a-f0-9]{40})").getMatch(0);
         if (hash_sha1 != null) {
             hashInfos.add(HashInfo.newInstanceSafe(hash_sha1, HashInfo.TYPE.SHA1));
+        } else {
+            logger.info("Failed to find hash_sha1");
         }
         final String hash_sha256 = br.getRegex("'SHA-256 HASH',\\s*'([a-f0-9]{64})").getMatch(0);
         if (hash_sha256 != null) {
             hashInfos.add(HashInfo.newInstanceSafe(hash_sha256, HashInfo.TYPE.SHA256));
+        } else {
+            logger.info("Failed to find hash_sha256");
         }
         link.setHashInfos(hashInfos);
         if (StringUtils.isEmpty(link.getComment())) {
@@ -204,9 +242,8 @@ public class AxfcNet extends PluginForHost {
         final String downloadPasswordFromURL = this.getDownloadPasswordFromURL(link);
         String passCode = null;
         if (dlform.hasInputFieldByName("keyword")) {
-            // TODO
             link.setPasswordProtected(true);
-            passCode = this.getDownloadPasswordFromURL(link);
+            passCode = downloadPasswordFromURL;
             if (passCode == null) {
                 passCode = link.getDownloadPassword();
             }
@@ -230,20 +267,14 @@ public class AxfcNet extends PluginForHost {
         }
         /* Check for invalid password */
         if (passCode != null) {
-            if (getDownloadform(br) != null) {
+            if (getDownloadform(br) != null || br.containsHTML(">\\s*キーワードが正しくありません|>\\s*入力されたキーワードが設定されたキーワードと相違しています")) {
                 /* Wrong password was entered */
-                link.setProperty(PROPERTY_ALLOW_DOWNLOAD_PASSWORD_FROM_URL, false);
-                if (downloadPasswordFromURL != null) {
-                    if (downloadPasswordFromURL.equals(link.getDownloadPassword())) {
-                        /*
-                         * Same [wrong] password was also set on DownloadLink -> Invalidate it here too so we don't retry with the same
-                         * wrong password.
-                         */
-                        link.setDownloadPassword(null);
-                    }
-                } else {
-                    link.setDownloadPassword(null);
+                if (downloadPasswordFromURL != null && !link.hasProperty(PROPERTY_ALLOW_DOWNLOAD_PASSWORD_FROM_URL)) {
+                    /* Password in url parameter is wrong -> Do not try that one again! */
+                    logger.info("Password in url parameter 'key' is invalid -> Do not retry that one again!");
+                    link.setProperty(PROPERTY_ALLOW_DOWNLOAD_PASSWORD_FROM_URL, false);
                 }
+                link.setDownloadPassword(null);
                 throw new PluginException(LinkStatus.ERROR_RETRY, "Wrong password entered");
             }
             /* Correct password was entered -> Save it */
