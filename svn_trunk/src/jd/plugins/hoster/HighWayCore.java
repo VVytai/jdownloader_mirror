@@ -69,7 +69,7 @@ import jd.plugins.PluginProgress;
 import jd.plugins.components.MultiHosterManagement;
 import jd.plugins.download.HashInfo;
 
-@HostPlugin(revision = "$Revision: 53147 $", interfaceVersion = 1, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53271 $", interfaceVersion = 1, names = {}, urls = {})
 public abstract class HighWayCore extends UseNet {
     private static final String                            PATTERN_TV                             = "(?i)https?://[^/]+/onlinetv\\.php\\?id=.+";
     /* Cloud/DAV file links added by crawler HighWayMeFolder3. */
@@ -1166,7 +1166,9 @@ public abstract class HighWayCore extends UseNet {
              * Account traffic needed: 4GB <br>
              * Individual host traffic needed: 1GB
              */
-            trafficNeeded = (trafficNeeded * mhost.getTrafficCalculationFactorPercent()) / 100;
+            if (!mhost.isUnlimitedTraffic()) {
+                trafficNeeded = (trafficNeeded * mhost.getTrafficCalculationFactorPercent()) / 100;
+            }
         }
         if (!ai.isUnlimitedTraffic() && !ai.isSpecialTraffic()) {
             /* Check if enough traffic is left */

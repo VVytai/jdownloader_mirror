@@ -48,7 +48,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.components.MultiHosterManagement;
 
-@HostPlugin(revision = "$Revision: 53181 $", interfaceVersion = 3, names = { "proleech.link" }, urls = { "" })
+@HostPlugin(revision = "$Revision: 53268 $", interfaceVersion = 3, names = { "proleech.link" }, urls = { "" })
 public class ProLeechLink extends PluginForHost {
     public ProLeechLink(PluginWrapper wrapper) {
         super(wrapper);
@@ -255,7 +255,7 @@ public class ProLeechLink extends PluginForHost {
                 account.setType(AccountType.FREE);
                 /* 2020-06-08: Free account downloads are impossible via API, some are possible via website */
                 ai.setTrafficLeft(0);
-                ai.setTrafficMax(trafficmaxDailyStr);
+                ai.setTrafficMax(SizeFormatter.getSize(trafficmaxDailyStr, true, true));
             }
         }
         /* Host specific traffic limits would be here: http://proleech.link/dl/debrid/deb_api.php?limits */

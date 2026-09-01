@@ -249,6 +249,8 @@ public abstract class PluginForDecrypt extends Plugin {
      * @return
      * @since JD2
      * @author raztoki
+     * @deprecated Do not create offline placeholder links. Throw
+     *             <code>new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND)</code> instead to signal that the content is offline.
      */
     @Deprecated
     protected DownloadLink createOfflinelink(final String link) {
@@ -263,6 +265,8 @@ public abstract class PluginForDecrypt extends Plugin {
      * @return
      * @since JD2
      * @author raztoki
+     * @deprecated Do not create offline placeholder links. Throw
+     *             <code>new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND)</code> instead to signal that the content is offline.
      */
     @Deprecated
     protected DownloadLink createOfflinelink(final String link, final String message) {
@@ -277,6 +281,8 @@ public abstract class PluginForDecrypt extends Plugin {
      * @param message
      * @since JD2
      * @author raztoki
+     * @deprecated Do not create offline placeholder links. Throw
+     *             <code>new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND)</code> instead to signal that the content is offline.
      */
     @Deprecated
     protected DownloadLink createOfflinelink(final String link, final String filename, final String message) {

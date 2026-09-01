@@ -1408,8 +1408,9 @@ public abstract class PluginForHost extends Plugin {
         if (trafficToDeduct == 0) {
             return;
         }
-        final long trafficLeft = Math.max(0, ai.getTrafficLeft() - trafficToDeduct);
-        ai.setTrafficLeft(trafficLeft);
+        // Deduct the transferred traffic and allow the value to go negative: an account may become overdrawn, and the
+        // displayed traffic left should reflect that truthfully instead of being clamped at 0.
+        ai.setTrafficLeft(ai.getTrafficLeft() - trafficToDeduct);
     }
 
     public void postHandle(final DownloadLink downloadLink, final Account account, final PluginForHost pluginForHost) throws Exception {

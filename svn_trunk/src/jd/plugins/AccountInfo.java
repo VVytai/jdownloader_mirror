@@ -32,7 +32,6 @@ import java.util.regex.Pattern;
 
 import org.appwork.utils.DebugMode;
 import org.appwork.utils.StringUtils;
-import org.appwork.utils.formatter.SizeFormatter;
 import org.appwork.utils.logging2.LogInterface;
 import org.appwork.utils.logging2.LogSource;
 import org.jdownloader.logging.LogController;
@@ -174,6 +173,15 @@ public class AccountInfo extends Property implements AccountTrafficView {
         return account_trafficLeft.longValue();
     }
 
+    /**
+     * Returns the maximum traffic in bytes, i.e. the larger of the remaining traffic ({@link #getTrafficLeft()}) and the explicitly set max
+     * traffic ({@link #setTrafficMax(long)}).
+     *
+     * Can return -1: {@code account_trafficMax} defaults to -1 as long as no max traffic has been set. Since {@link #getTrafficLeft()} may
+     * now be negative (overdrawn account), the returned value is -1 when no max traffic was set and the remaining traffic is <= -1.
+     *
+     * @return
+     */
     public long getTrafficMax() {
         return Math.max(getTrafficLeft(), account_trafficMax);
     }
@@ -252,10 +260,6 @@ public class AccountInfo extends Property implements AccountTrafficView {
         this.account_premiumPoints = Math.max(0, parseInt);
     }
 
-    public void setPremiumPoints(final String string) {
-        this.setPremiumPoints(Integer.parseInt(string.trim()));
-    }
-
     public void setStatus(final String string) {
         this.account_status = string;
     }
@@ -270,18 +274,6 @@ public class AccountInfo extends Property implements AccountTrafficView {
 
     public boolean isUnlimitedTraffic() {
         return account_trafficLeft == null;
-    }
-
-    public void setTrafficLeft(final String freeTraffic) {
-        this.setTrafficLeft(SizeFormatter.getSize(freeTraffic, true, true));
-    }
-
-    /**
-     * @since JD2
-     * @param trafficMax
-     */
-    public void setTrafficMax(final String trafficMax) {
-        this.setTrafficMax(SizeFormatter.getSize(trafficMax, true, true));
     }
 
     public void setTrafficMax(final long trafficMax) {

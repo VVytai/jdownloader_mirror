@@ -68,7 +68,7 @@ import jd.plugins.hoster.ZdfDeMediathek;
 import jd.plugins.hoster.ZdfDeMediathek.ZdfmediathekConfigInterface;
 import jd.plugins.hoster.ZdfDeMediathek.ZdfmediathekConfigInterface.SubtitleType;
 
-@DecrypterPlugin(revision = "$Revision: 53168 $", interfaceVersion = 3, names = { "zdf.de", "logo.de", "zdfheute.de", "3sat.de", "phoenix.de" }, urls = { "https?://(?:www\\.)?zdf\\.de/.+", "https?://(?:www\\.)?logo\\.de/.+", "https?://(?:www\\.)?zdfheute\\.de/.+", "https?://(?:www\\.)?3sat\\.de/.+/[A-Za-z0-9_\\-]+\\.html|https?://(?:www\\.)?3sat\\.de/uri/(?:syncvideoimport_beitrag_\\d+|transfer_SCMS_[a-f0-9\\-]+|[a-z0-9\\-]+)", "https?://(?:www\\.)?phoenix\\.de/(?:.*?-\\d+\\.html.*|podcast/[A-Za-z0-9]+/video/rss\\.xml)" })
+@DecrypterPlugin(revision = "$Revision: 53265 $", interfaceVersion = 3, names = { "zdf.de", "logo.de", "zdfheute.de", "3sat.de", "phoenix.de" }, urls = { "https?://(?:www\\.)?zdf\\.de/.+", "https?://(?:www\\.)?logo\\.de/.+", "https?://(?:www\\.)?zdfheute\\.de/.+", "https?://(?:www\\.)?3sat\\.de/.+/[A-Za-z0-9_\\-]+\\.html|https?://(?:www\\.)?3sat\\.de/uri/(?:syncvideoimport_beitrag_\\d+|transfer_SCMS_[a-f0-9\\-]+|[a-z0-9\\-]+)", "https?://(?:www\\.)?phoenix\\.de/(?:.*?-\\d+\\.html.*|podcast/[A-Za-z0-9]+/video/rss\\.xml)" })
 public class ZDFMediathekDecrypter extends PluginForDecrypt {
     private boolean                          fastlinkcheck             = false;
     private final String                     TYPE_ZDF                  = "(?i)https?://(?:www\\.)?(?:zdf\\.de|3sat\\.de)/.+";
@@ -429,19 +429,37 @@ public class ZDFMediathekDecrypter extends PluginForDecrypt {
         if (videoCanonicals != null) {
             uniqueVideoCanonicals.addAll(Arrays.asList(videoCanonicals));
         }
-        final boolean isSingleVideoPage = uniqueVideoCanonicals.size() == 1;
         /* 2. Single video via embedded ptmd-template (new zdfmediathek 2026) -> preferred way whenever present. */
         final String ptmdTemplate = new Regex(html_unescaped, "\"ptmdTemplate\"\\s*:\\s*\"(/tmd/[^\"]+)\"").getMatch(0);
         final String sophoraID_from_url = this.getSophoraIDFromURL_safe(br.getURL());
+        /*
+         * Count the distinct playable videos via their ptmd-templates: every playable item embeds exactly one. Overview/collection pages
+         * embed multiple (one per teaser) whereas a single film-/video-page embeds exactly one. This ptmd-based count is more robust than
+         * the videoCanonicals-count above because the latter's regex depends on the key order (canonical after __typename) which does not
+         * hold on all pages - e.g. film pages (/filme/booksmart-movie-100, a MovieSmartCollection) list "canonical" before "__typename".
+         */
+        final String[] ptmdTemplates = new Regex(html_unescaped, "\"ptmdTemplate\"\\s*:\\s*\"(/tmd/[^\"]+)\"").getColumn(0);
+        final HashSet<String> uniquePtmdTemplates = new HashSet<String>();
+        if (ptmdTemplates != null) {
+            uniquePtmdTemplates.addAll(Arrays.asList(ptmdTemplates));
+        }
+        final boolean isSingleVideoPage = uniqueVideoCanonicals.size() == 1 || uniquePtmdTemplates.size() == 1;
+        /* The hero video's canonical is the real video sophora ID (e.g. film pages: the URL slug points to a page-index, not the video). */
+        final String heroSophoraID = findHeroSophoraID(html_unescaped);
         /* Only take the single-video fast-path when the URL clearly identifies one video or the page really contains just one. */
         if (ptmdTemplate != null && (sophoraID_from_url != null || isSingleVideoPage)) {
             logger.info("Found ptmdTemplate in website -> Using new way");
-            if (sophoraID_from_url != null) {
-                /* We know that this is a single video so we can skip the steps down below. */
-                logger.info("Found single video_id in browser url -> Trying old method first, using new method as fallback");
+            /*
+             * Prefer the old way (content-document) whenever we know the video's sophora ID: it provides safe metadata + availability check.
+             * The sophora ID comes from the URL (e.g. /play/... links) or, if the URL slug is only a page-index (e.g. film pages), from the
+             * hero video's canonical.
+             */
+            final String knownSophoraID = sophoraID_from_url != null ? sophoraID_from_url : heroSophoraID;
+            if (knownSophoraID != null) {
+                logger.info("Found single video_id (" + knownSophoraID + ") -> Trying old method first, using new method as fallback");
                 try {
                     /* Try old way first if possible because it provides easy and safe access to the metadata we want. */
-                    return crawlZdfVideoViaSophoraID(param, sophoraID_from_url, websiteMetadata);
+                    return crawlZdfVideoViaSophoraID(param, knownSophoraID, websiteMetadata);
                 } catch (final PluginException ple) {
                     if (ple.getLinkStatus() != LinkStatus.ERROR_FILE_NOT_FOUND) {
                         throw ple;
@@ -459,12 +477,9 @@ public class ZDFMediathekDecrypter extends PluginForDecrypt {
          * title (e.g. "Spielfilm-Highlights").
          */
         if (ptmdTemplate != null && videoCanonicals != null && videoCanonicals.length > 0) {
-            String heroSophoraID = new Regex(html_unescaped, "\"heroVideo\"\\s*:\\s*\\{[^\\}]*?\"canonical\"\\s*:\\s*\"([\\w-]+)\"").getMatch(0);
-            if (heroSophoraID == null) {
-                heroSophoraID = videoCanonicals[0];
-            }
-            logger.info("Overview page detected -> crawling only the hero element: " + heroSophoraID);
-            return crawlZdfVideoViaSophoraID(param, heroSophoraID);
+            final String overviewHeroSophoraID = heroSophoraID != null ? heroSophoraID : videoCanonicals[0];
+            logger.info("Overview page detected -> crawling only the hero element: " + overviewHeroSophoraID);
+            return crawlZdfVideoViaSophoraID(param, overviewHeroSophoraID);
         }
         /* 3. No ptmd-template found -> fall back to the old ways (content-document, embedded videos, ...). */
         if (sophoraID_from_url != null) {
@@ -559,6 +574,27 @@ public class ZDFMediathekDecrypter extends PluginForDecrypt {
             return sophoraID;
         }
         return null;
+    }
+
+    /**
+     * Returns the sophora ID (canonical) of the page's hero/main video or null. <br>
+     * ZDF serves two JSON key orderings for a video object, so both are tried: <br>
+     * 1. "canonical" is a direct (flat) property of the "heroVideo" object, e.g. film pages:
+     * "heroVideo":{"canonical":"booksmart-100",...,"__typename":"Video"}. The [^\{\}] restriction keeps us on the hero object's own
+     * canonical and never descends into a nested one (e.g. the fsk "altersfreigabe-ab-12" canonical). <br>
+     * 2. A flat video object that pairs "__typename":"Video" and "canonical" in either order (key order differs between JSON versions).
+     */
+    private String findHeroSophoraID(final String html_unescaped) {
+        String heroSophoraID = new Regex(html_unescaped, "\"heroVideo\"\\s*:\\s*\\{[^\\{\\}]*?\"canonical\"\\s*:\\s*\"([\\w-]+)\"").getMatch(0);
+        if (heroSophoraID != null) {
+            return heroSophoraID;
+        }
+        heroSophoraID = new Regex(html_unescaped, "\"canonical\"\\s*:\\s*\"([\\w-]+)\"[^\\{\\}]*?\"__typename\"\\s*:\\s*\"Video\"").getMatch(0);
+        if (heroSophoraID != null) {
+            return heroSophoraID;
+        }
+        heroSophoraID = new Regex(html_unescaped, "\"__typename\"\\s*:\\s*\"Video\"[^\\{\\}]*?\"canonical\"\\s*:\\s*\"([\\w-]+)\"").getMatch(0);
+        return heroSophoraID;
     }
 
     /** Holds all metadata plus stream-/download-urls required to build the final DownloadLinks. */

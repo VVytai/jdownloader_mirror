@@ -44,7 +44,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53264 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53265 $", interfaceVersion = 2, names = {}, urls = {})
 public class OtrFilesDe extends PluginForHost {
     public OtrFilesDe(PluginWrapper wrapper) {
         super(wrapper);
@@ -70,8 +70,10 @@ public class OtrFilesDe extends PluginForHost {
         return buildAnnotationUrls(getPluginDomains());
     }
 
-    private static final Pattern PATTERN_OPTION = Pattern.compile("/index\\.php\\?option=com_content\\&task=view\\&id=\\d+\\&Itemid=\\d+\\&server=\\d+\\&f=[^<>\"']+\\.(?:otrkey|otr2)");
-    private static final Pattern PATTERN_FILE   = Pattern.compile("/\\?file=[^<>\"']+\\.(?:otrkey|otr2)");
+    /** Regex fragment matching the required file-extension suffix, e.g. ".otrkey". */
+    private static final String  EXTENSION_SUFFIX = "\\.(?:otrkey|otr2)";
+    private static final Pattern PATTERN_OPTION   = Pattern.compile("/index\\.php\\?option=com_content\\&task=view\\&id=\\d+\\&Itemid=\\d+\\&server=\\d+\\&f=[^<>\"']+" + EXTENSION_SUFFIX);
+    private static final Pattern PATTERN_FILE     = Pattern.compile("/\\?file=[^<>\"']+" + EXTENSION_SUFFIX);
 
     public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
         final List<String> ret = new ArrayList<String>();
@@ -276,9 +278,9 @@ public class OtrFilesDe extends PluginForHost {
     }
 
     private String findOptionsLink() throws Exception {
-        String optlink = br.getRegex("\"(https?://(www\\.)?otr-files\\.de/index\\.php\\?option=com_content(?:&amp;|&)task=view(?:&amp;|&)id=\\d+(?:&amp;|&)Itemid=\\d+(?:&amp;|&)server=[a-z0-9]*(?:&amp;|&)f=[^<>\"\\']+\\.(?:otrkey|otr2))\"").getMatch(0);
+        String optlink = br.getRegex("\"(https?://(www\\.)?otr-files\\.de/index\\.php\\?option=com_content(?:&amp;|&)task=view(?:&amp;|&)id=\\d+(?:&amp;|&)Itemid=\\d+(?:&amp;|&)server=[a-z0-9]*(?:&amp;|&)f=[^<>\"\\']+" + EXTENSION_SUFFIX + ")\"").getMatch(0);
         if (optlink == null) {
-            optlink = br.getRegex("\"(\\.?/index\\.php\\?option=com_content(?:&amp;|&)task=view(?:&amp;|&)id=\\d+(?:&amp;|&)Itemid=\\d+(?:&amp;|&)server=[a-z0-9]*(?:&amp;|&)f=[^<>\"\\']+\\.(?:otrkey|otr2))\"").getMatch(0);
+            optlink = br.getRegex("\"(\\.?/index\\.php\\?option=com_content(?:&amp;|&)task=view(?:&amp;|&)id=\\d+(?:&amp;|&)Itemid=\\d+(?:&amp;|&)server=[a-z0-9]*(?:&amp;|&)f=[^<>\"\\']+" + EXTENSION_SUFFIX + ")\"").getMatch(0);
             if (optlink != null) {
                 optlink = br.getURL(optlink).toExternalForm();
             }
@@ -293,10 +295,10 @@ public class OtrFilesDe extends PluginForHost {
         String dllink;
         if (account != null && AccountType.PREMIUM.equals(account.getType())) {
             /* Premium */
-            dllink = br.getRegex("\"(https?://download\\.otr\\-files\\.(de|net)/dl\\d+/\\d+/[a-z0-9]+/[^\"]+\\.(?:otrkey|otr2))\"").getMatch(0);
+            dllink = br.getRegex("\"(https?://download\\.otr\\-files\\.(de|net)/dl\\d+/\\d+/[a-z0-9]+/[^\"]+" + EXTENSION_SUFFIX + ")\"").getMatch(0);
             return dllink;
         }
-        dllink = br.getRegex("\"(https?://otr\\-files\\.(de|net)/dl\\-slot/\\d+/[a-z0-9]+/[^\"]+\\.(?:otrkey|otr2))\"").getMatch(0);
+        dllink = br.getRegex("\"(https?://otr\\-files\\.(de|net)/dl\\-slot/\\d+/[a-z0-9]+/[^\"]+" + EXTENSION_SUFFIX + ")\"").getMatch(0);
         return dllink;
     }
 

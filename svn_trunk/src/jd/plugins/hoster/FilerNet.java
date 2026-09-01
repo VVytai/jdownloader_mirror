@@ -58,7 +58,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53263 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53269 $", interfaceVersion = 2, names = {}, urls = {})
 public class FilerNet extends PluginForHost {
     private static final int    STATUSCODE_APIDISABLED                             = 400;
     private static final String ERRORMESSAGE_APIDISABLEDTEXT                       = "API is disabled, please wait or use filer.net in your browser";
@@ -482,8 +482,8 @@ public class FilerNet extends PluginForHost {
     }
 
     /**
-     * Throws an {@link AccountUnavailableException} with a human readable recovery ETA if the given traffic_left value is negative.
-     * Returns normally otherwise. </br>
+     * Throws an {@link AccountUnavailableException} with a human readable recovery ETA if the given traffic_left value is negative. Returns
+     * normally otherwise. </br>
      * Negative traffic recovers over time: 50 GB is added back every 24 hours (which equals 1 GB every 28.8 minutes).
      */
     private void throwExceptionOnNegativeTraffic(final long trafficLeft) throws AccountUnavailableException {
@@ -517,8 +517,8 @@ public class FilerNet extends PluginForHost {
     /**
      * If the account is in the negative traffic range, throws an {@link AccountUnavailableException} with the same recovery ETA message as
      * {@link #fetchAccountInfo(Account)}. Returns normally if there is no {@link AccountInfo} yet or the traffic is not negative. </br>
-     * The remaining traffic is read from the existing {@link AccountInfo} (note: AccountInfo may currently clamp negative values to zero, in
-     * which case this check simply does nothing).
+     * The remaining traffic is read from the existing {@link AccountInfo} (note: AccountInfo may currently clamp negative values to zero,
+     * in which case this check simply does nothing).
      */
     private void checkNegativeTrafficAndThrow(final Account account) throws AccountUnavailableException {
         final AccountInfo ai = account.getAccountInfo();
@@ -678,10 +678,11 @@ public class FilerNet extends PluginForHost {
                      * (with recovery ETA) as fetchAccountInfo does instead of the generic traffic limit message.
                      */
                     checkNegativeTrafficAndThrow(account);
+                    final long wait = 5 * 60 * 1000l;
                     if (StringUtils.isEmpty(status)) {
-                        throw new AccountUnavailableException("Error 504: Traffic limit reached", 30 * 60 * 1000l);
+                        throw new AccountUnavailableException("Error 504: Traffic limit reached", wait);
                     } else {
-                        throw new AccountUnavailableException(status, 60 * 60 * 1000l);
+                        throw new AccountUnavailableException(status, wait);
                     }
                 }
             case STATUSCODE_UNKNOWNERROR:

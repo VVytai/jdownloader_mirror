@@ -17,7 +17,6 @@ package jd.plugins.decrypter;
 
 import java.net.URLEncoder;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +43,7 @@ import jd.plugins.FilePackage;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-@DecrypterPlugin(revision = "$Revision: 53220 $", interfaceVersion = 5, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53267 $", interfaceVersion = 5, names = {}, urls = {})
 public class NaughtyBlgOrg extends antiDDoSForDecrypt {
     private enum Category {
         UNDEF,
@@ -80,65 +79,27 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
     public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
         final List<String> ret = new ArrayList<String>();
         for (final String[] domains : pluginDomains) {
-            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/(?!webmasters|contact)[a-z0-9\\-]+/?");
+            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/(?!webmasters|contact)[a-z0-9\\-]+/?(?:#nocaptcha)?");
         }
         return ret.toArray(new String[0]);
     }
 
     private Category CATEGORY;
 
-    public ArrayList<DownloadLink> decryptIt(CryptedLink param, ProgressController progress) throws Exception {
+    public ArrayList<DownloadLink> decryptIt(final CryptedLink param, final ProgressController progress) throws Exception {
         CATEGORY = Category.UNDEF;
         final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
         final String contenturl = param.getCryptedUrl();
         if (contenturl.matches("https://[^/]+/(category|linkex|feed|\\d{4}|tag|free\\-desktop\\-strippers|list\\-of\\-.+|contact\\-us|how\\-to\\-download\\-files|siterips)")) {
             logger.info("Invalid link: " + contenturl);
-            ret.add(this.createOfflinelink(contenturl));
-            return ret;
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         br.setFollowRedirects(true);
         getPage(contenturl);
         if (br.getRequest().getHttpConnection().getResponseCode() == 404 || br.containsHTML(">Page not found \\(404\\)<|>403 Forbidden<") || br.containsHTML("No htmlCode read")) {
-            ret.add(this.createOfflinelink(contenturl));
-            return ret;
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         } else if (br.containsHTML(">Deleted due DMCA report<")) {
-            ret.add(this.createOfflinelink(contenturl));
-            return ret;
-        }
-        getPage(contenturl);
-        final String nonce = br.getRegex("\"nonce\"\\s*:\\s*\"(.*?)\"").getMatch(0);
-        final String post_id = br.getRegex("\"post_id\"\\s*:\\s*\"(.*?)\"").getMatch(0);
-        final String captcha_key = br.getRegex("\"recaptcha_key\"\\s*:\\s*\"(.*?)\"").getMatch(0);
-        final String data_protection = br.getRegex("data-protection\\s*=\\s*\"(.*?)\"").getMatch(0);
-        final String data_area = br.getRegex("data-area\\s*=\\s*\"(.*?)\"").getMatch(0);
-        final String data_psid = br.getRegex("data-psid\\s*=\\s*\"(.*?)\"").getMatch(0);
-        String downloadhidden = null;
-        if (StringUtils.isAllNotEmpty(nonce, post_id, captcha_key, data_area, data_protection, data_psid)) {
-            final Form form = new Form();
-            form.setAction("/wp-admin/admin-ajax.php");
-            form.setMethod(MethodType.POST);
-            form.put("action", "validate_input");
-            form.put("nonce", nonce);
-            form.put("post_id", post_id);
-            form.put("protection", URLEncoder.encode(data_protection, "UTF-8"));
-            form.put("area", URLEncoder.encode(data_area, "UTF-8"));
-            form.put("captcha_id", data_psid);
-            form.put("type", "recaptcha");
-            if (CaptchaHelperCrawlerPluginRecaptchaV2.isValidSiteKey(captcha_key)) {
-                final String response = new CaptchaHelperCrawlerPluginRecaptchaV2(this, br, captcha_key).getToken();
-                form.put("token", response);
-            } else if (CaptchaHelperCrawlerPluginHCaptcha.isValidSiteKey(captcha_key)) {
-                final String response = new CaptchaHelperCrawlerPluginHCaptcha(this, br, captcha_key).getToken();
-                form.put("token", response);
-            } else {
-                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT, "Unsupported captchaKey:" + captcha_key);
-            }
-            final Browser brc = br.cloneBrowser();
-            brc.submitForm(form);
-            final Map<String, Object> response = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
-            if (Boolean.TRUE.equals(response.get("success"))) {
-                downloadhidden = (String) response.get("content");
-            }
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         // String content = this.br.getRegex(Pattern.compile("<div id=\"main\\-content\" class=\"main\\-content\\-single\">(.*?)<h3
         // class=\"comments\"", 34)).getMatch(0);
@@ -149,8 +110,7 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
         }
         if (contentReleaseName == null) {
             logger.warning("Crawler broken or content offline");
-            ret.add(this.createOfflinelink(contenturl));
-            return ret;
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         // replace en-dash with a real dash
         contentReleaseName = contentReleaseName.replace("&#8211;", "-");
@@ -191,6 +151,13 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
         if (categoryCheck.matches()) {
             CATEGORY = Category.SITERIP;
         }
+        final FilePackage fp = FilePackage.getInstance();
+        fp.setName(getFpName(contentReleaseName));
+        fp.setPackageKey("naughtyblog://path/" + br._getURL().getPath());
+        final Set<String> dupes = new HashSet<String>();
+        /*
+         * Step 1: Crawl all links which do not require a captcha and distribute them immediately so they show up in JDownloader right away.
+         */
         String contentReleaseLinks = null;
         if (CATEGORY != Category.SITERIP) {
             contentReleaseLinks = br.getRegex(">Download:?</(.*?)</div>").getMatch(0);
@@ -216,38 +183,103 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
             /* Final fallback --> Scan complete html */
             contentReleaseLinks = br.getRequest().getHtmlCode();
         }
-        final Set<String> links = new HashSet<String>();
-        final String[] foundLinks = HTMLParser.getHttpLinks(contentReleaseLinks, null);
-        if (foundLinks != null) {
-            links.addAll(Arrays.asList(foundLinks));
+        addLinks(HTMLParser.getHttpLinks(contentReleaseLinks, null), fp, dupes, ret);
+        // final String[] imgs = br.getRegex("(https://([\\w\\.]+)?pixhost\\.to/show/[^\"]+)").getColumn(0);
+        addLinks(br.getRegex("(https?://(?:[\\w\\.]+)?pixhost\\.to/show/[^\"\\'<>]+)").getColumn(0), fp, dupes, ret);
+        /*
+         * Step 2: Optionally crawl the "spare links" which are hidden behind a captcha. This is more expensive as it requires the user to
+         * solve a captcha.
+         */
+        // TODO: Replace this hardcoded boolean with a plugin setting.
+        final boolean crawlSpareLinksBehindCaptcha;
+        if (ret.isEmpty()) {
+            logger.info("Crawling captcha protected items because: Failed to find non protected items");
+            crawlSpareLinksBehindCaptcha = true;
+        } else if (StringUtils.endsWithCaseInsensitive(contenturl, "#nocaptcha")) {
+            logger.info("Avoiding captcha because: User added #nocaptcha to URL");
+            crawlSpareLinksBehindCaptcha = false;
+        } else if (true) {
+            // TODO: Add plugin setting
+            crawlSpareLinksBehindCaptcha = true;
+        } else {
+            crawlSpareLinksBehindCaptcha = false;
         }
-        final String[] foundHiddenLinks = HTMLParser.getHttpLinks(downloadhidden, null);
-        if (foundHiddenLinks != null) {
-            links.addAll(Arrays.asList(foundHiddenLinks));
+        if (crawlSpareLinksBehindCaptcha) {
+            final String downloadhidden = crawlSpareLinks();
+            addLinks(HTMLParser.getHttpLinks(downloadhidden, null), fp, dupes, ret);
         }
-        if (links.size() == 0) {
+        if (ret.isEmpty()) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
-        for (final String link : links) {
-            if (!new Regex(link, this.getSupportedLinks()).matches()) {
-                String cleanedRegExString = link.replace("<a href=", "");
-                cleanedRegExString = link.replace(" title", "");
-                final DownloadLink dl = createDownloadlink(cleanedRegExString);
-                ret.add(dl);
-            }
-        }
-        // final String[] imgs = br.getRegex("(https://([\\w\\.]+)?pixhost\\.to/show/[^\"]+)").getColumn(0);
-        final String[] imgs = br.getRegex("(https?://(?:[\\w\\.]+)?pixhost\\.to/show/[^\"\\'<>]+)").getColumn(0);
-        if (links != null && links.size() != 0) {
-            for (final String img : imgs) {
-                final DownloadLink dl = createDownloadlink(img);
-                ret.add(dl);
-            }
-        }
-        final FilePackage linksFP = FilePackage.getInstance();
-        linksFP.setName(getFpName(contentReleaseName));
-        linksFP.addLinks(ret);
         return ret;
+    }
+
+    /**
+     * Adds all given URLs as {@link DownloadLink}s to the given package, skipping internal (self) links and duplicates, and distributes
+     * them immediately.
+     */
+    private void addLinks(final String[] urls, final FilePackage fp, final Set<String> dupes, final ArrayList<DownloadLink> ret) {
+        if (urls == null) {
+            return;
+        }
+        for (final String url : urls) {
+            if (new Regex(url, this.getSupportedLinks()).matches()) {
+                /* Skip internal links pointing back to this website. */
+                continue;
+            }
+            if (!dupes.add(url)) {
+                /* Skip duplicate. */
+                continue;
+            }
+            final DownloadLink link = createDownloadlink(url);
+            link._setFilePackage(fp);
+            ret.add(link);
+            distribute(link);
+        }
+    }
+
+    /**
+     * Solves the captcha and submits the "passster" form to reveal the spare links which are hidden behind that captcha.
+     *
+     * @return the HTML fragment containing the revealed spare links, or null if this item does not have any captcha protected spare links.
+     */
+    private String crawlSpareLinks() throws Exception {
+        final String nonce = br.getRegex("\"nonce\"\\s*:\\s*\"(.*?)\"").getMatch(0);
+        final String post_id = br.getRegex("\"post_id\"\\s*:\\s*\"(.*?)\"").getMatch(0);
+        final String captcha_key = br.getRegex("\"recaptcha_key\"\\s*:\\s*\"(.*?)\"").getMatch(0);
+        final String data_protection = br.getRegex("data-protection\\s*=\\s*\"(.*?)\"").getMatch(0);
+        final String data_area = br.getRegex("data-area\\s*=\\s*\"(.*?)\"").getMatch(0);
+        final String data_psid = br.getRegex("data-psid\\s*=\\s*\"(.*?)\"").getMatch(0);
+        if (!StringUtils.isAllNotEmpty(nonce, post_id, captcha_key, data_area, data_protection, data_psid)) {
+            logger.info("This item does not have any spare links behind a captcha");
+            return null;
+        }
+        final Form form = new Form();
+        form.setAction("/wp-admin/admin-ajax.php");
+        form.setMethod(MethodType.POST);
+        form.put("action", "validate_input");
+        form.put("nonce", nonce);
+        form.put("post_id", post_id);
+        form.put("protection", URLEncoder.encode(data_protection, "UTF-8"));
+        form.put("area", URLEncoder.encode(data_area, "UTF-8"));
+        form.put("captcha_id", data_psid);
+        form.put("type", "recaptcha");
+        if (CaptchaHelperCrawlerPluginRecaptchaV2.isValidSiteKey(captcha_key)) {
+            final String response = new CaptchaHelperCrawlerPluginRecaptchaV2(this, br, captcha_key).getToken();
+            form.put("token", response);
+        } else if (CaptchaHelperCrawlerPluginHCaptcha.isValidSiteKey(captcha_key)) {
+            final String response = new CaptchaHelperCrawlerPluginHCaptcha(this, br, captcha_key).getToken();
+            form.put("token", response);
+        } else {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT, "Unsupported captchaKey:" + captcha_key);
+        }
+        final Browser brc = br.cloneBrowser();
+        brc.submitForm(form);
+        final Map<String, Object> response = restoreFromString(brc.getRequest().getHtmlCode(), TypeRef.MAP);
+        if (!Boolean.TRUE.equals(response.get("success"))) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+        }
+        return (String) response.get("content");
     }
 
     private String getFpName(String filePackageName) {

@@ -50,7 +50,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.SwisstransferCom;
 
-@DecrypterPlugin(revision = "$Revision: 53264 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53265 $", interfaceVersion = 3, names = {}, urls = {})
 public class SwisstransferComFolder extends PluginForDecrypt {
     public SwisstransferComFolder(PluginWrapper wrapper) {
         super(wrapper);
@@ -92,6 +92,17 @@ public class SwisstransferComFolder extends PluginForDecrypt {
             ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + PATTERN_DL.pattern());
         }
         return ret.toArray(new String[0]);
+    }
+
+    @Override
+    public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
+        final String contenturl = param.getCryptedUrl();
+        final String linkMode = new Regex(contenturl, PATTERN_DL).getMatch(0);
+        if ("dl".equals(linkMode)) {
+            return decryptIt_DL(param, progress);
+        } else {
+            return decryptIt_D(param, progress);
+        }
     }
 
     private ArrayList<DownloadLink> decryptIt_D(final CryptedLink param, ProgressController progress) throws Exception {
@@ -261,16 +272,6 @@ public class SwisstransferComFolder extends PluginForDecrypt {
             result._setFilePackage(fp);
         }
         return ret;
-    }
-
-    public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
-        final String contenturl = param.getCryptedUrl();
-        final String linkMode = new Regex(contenturl, PATTERN_DL).getMatch(0);
-        if ("dl".equals(linkMode)) {
-            return decryptIt_DL(param, progress);
-        } else {
-            return decryptIt_D(param, progress);
-        }
     }
 
     private ArrayList<DownloadLink> decryptIt_DL(final CryptedLink param, ProgressController progress) throws Exception {

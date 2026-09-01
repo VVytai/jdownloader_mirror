@@ -46,7 +46,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.components.PluginJSonUtils;
 
-@HostPlugin(revision = "$Revision: 52924 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53269 $", interfaceVersion = 2, names = {}, urls = {})
 public class ChipDe extends PluginForHost {
     public ChipDe(PluginWrapper wrapper) {
         super(wrapper);
@@ -129,6 +129,7 @@ public class ChipDe extends PluginForHost {
     @SuppressWarnings({ "deprecation", "unchecked" })
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws Exception {
+        dllink = null;
         this.setBrowserExclusive();
         br.setFollowRedirects(true);
         br.setAllowedResponseCodes(410);
@@ -193,7 +194,10 @@ public class ChipDe extends PluginForHost {
             if (StringUtils.isEmpty(title)) {
                 title = br.getRegex("property=\"og:title\" content=\"([^<>\"]*?)\"").getMatch(0);
             }
-            filesizeStr = br.getRegex(">Dateigröße:\\s*</th>\\s*<td>([^<]+)</td>").getMatch(0); // 2026-06-22
+            filesizeStr = br.getRegex("<dt>\\s*Datei-Größe:\\s*</dt>\\s*<dd>([^<]+)</dd>").getMatch(0); // 2026-08-31: New website layout
+            if (filesizeStr == null) {
+                filesizeStr = br.getRegex(">Dateigröße:\\s*</th>\\s*<td>([^<]+)</td>").getMatch(0); // 2026-06-22
+            }
             if (filesizeStr == null) {
                 filesizeStr = br.getRegex(">Dateigr\\&ouml;\\&szlig;e:</p>[\t\n\r ]+<p class=\"col2\">([^<>\"]*?)<meta itemprop=\"fileSize\"").getMatch(0);
                 if (filesizeStr == null) {
@@ -214,7 +218,13 @@ public class ChipDe extends PluginForHost {
             /* Checksum is usually only available for chip.eu downloads! */
             md5 = br.getRegex("<dt>(?:Контрольная сумма \\(MD 5\\):|Checksum:|Prüfsumme:|Kontrolní součet:|Szumma:|Suma kontrolna|Checksum|Kontrol toplamı:|校验码：)<br /></dt>[\t\n\r ]+<dd>(.*?)<br /></dd>").getMatch(0);
             date = br.getRegex("itemprop=\"datePublished\" datetime=\"(\\d{4}\\-\\d{2}\\-\\d{2}T\\d{2}:\\d{2}:\\d{2})\"").getMatch(0);
-            description = br.getRegex("description:\"([^<>\"]*?)\"").getMatch(0);
+            if (date == null) {
+                date = br.getRegex("\"datePublished\"\\s*:\\s*\"(\\d{4}\\-\\d{2}\\-\\d{2} \\d{2}:\\d{2}:\\d{2})\"").getMatch(0); // 2026-08-31:
+                                                                                                                                 // New
+                                                                                                                                 // website
+                                                                                                                                 // layout
+            }
+            description = br.getRegex("description:\"([^\"]+)\"").getMatch(0);
             if (description == null) {
                 description = br.getRegex("<p[^>]*itemprop=\"description\">(.*?)</p>").getMatch(0); // 2026-06-22
             }
@@ -368,45 +378,76 @@ public class ChipDe extends PluginForHost {
                     /* This will throw an Exception. */
                     errorExternalDownloadImpossible();
                 }
-                final boolean looksLikeDownloadIsPossible = br.containsHTML("js_manual_installation");
+                final boolean looksLikeDownloadIsPossible = br.containsHTML("js_manual_installation") || br.containsHTML("DownloadPageWidget-DownloadButton");
                 final String textNoDownloadAvailable = "No download button available";
-                final String step1 = br.getRegex("class=\"[^\"]*download_button[^\"]+\"[^>]*>\\s*<a rel=\"nofollow\"[^>]*href=\"(https?://[^\"]+)").getMatch(0);
-                if (step1 == null) {
+                /*
+                 * 2026-08-31: New website layout. The download links point to an internal redirect URL of the following form:
+                 * https://x.chip.de/intern/dl/?url=<url-encoded getfile-url> </br> The "url" parameter contains the (percent-encoded)
+                 * getfile URL. </br> The same getfile URL exists with different "deliver" values: "deliver=web" leads to the original
+                 * download while "deliver=installer" leads to the Chip installer. The "deliver=web" variant is only present inside the
+                 * embedded JSON (not in the visible download button) and carries its own signature ("s" parameter) so we must use it as-is
+                 * - modifying "deliver" of another variant would invalidate that signature. </br> The inner "url" value is purely
+                 * percent-encoded (no quotes/backslashes) thus we can grab it directly regardless of the surrounding JSON escaping.
+                 */
+                final String getfilePatternStart = "url=(https%3A%2F%2F(?:www\\.)?chip\\.de%2Fdownloads%2Fgetfile%2F[^\"&\\\\]*";
+                final String getfilePatternEnd = "[^\"&\\\\]*)";
+                String getfileUrl = br.getRegex(getfilePatternStart + "deliver%3Dweb" + getfilePatternEnd).getMatch(0);
+                if (getfileUrl != null) {
+                    /* isUrl=true only decodes the percent-sequences present in the URL and keeps the base64 "dl" parameter untouched. */
+                    getfileUrl = Encoding.urlDecode(getfileUrl, true);
+                    br.getPage(getfileUrl);
                     /*
-                     * 2021-07-22: Treat such files as non-downloadable although this could also mean there is a plugin failure. Some items
-                     * are just "dummy" items which don't have any download options e.g.
-                     * https://www.chip.de/downloads/WordPress-Android-App_54778552.html
+                     * The getfile page embeds the final "securedl" download URL inside an HTML-entity-encoded JSON blob, e.g.
+                     * &quot;downloadUrl&quot;&#x3A;&quot;https&#x3A;&#x5C;&#x2F;&#x5C;&#x2F;securedl...&quot;
                      */
-                    // throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-                    throw new PluginException(LinkStatus.ERROR_FATAL, textNoDownloadAvailable);
-                }
-                final String step1decoded = Encoding.htmlOnlyDecode(step1);
-                String step1_query_url = UrlQuery.parse(step1decoded).get("url");
-                if (step1_query_url != null) {
-                    step1_query_url = Encoding.htmlDecode(step1_query_url);
-                    br.getPage(step1_query_url);
+                    final String htmlDecoded = Encoding.htmlDecode(br.getRequest().getHtmlCode());
+                    dllink = new Regex(htmlDecoded, "\"downloadUrl\"\\s*:\\s*\"(https?:[^\"]*securedl[^\"]*)\"").getMatch(0);
+                    if (dllink != null) {
+                        /* Unescape JSON forward-slashes. */
+                        dllink = dllink.replace("\\/", "/");
+                    }
                 } else {
-                    br.getPage(step1decoded);
-                }
-                final String step2 = br.getRegex("(/downloads/c1_downloads_hs_getfile[^<>\"]+)\"").getMatch(0);
-                if (step2 != null) {
-                    final String step2decoded = Encoding.htmlOnlyDecode(step2);
-                    br.getPage(step2decoded);
-                } else {
-                    logger.warning("Failed to find step2 URL");
-                }
-                dllink = br.getRegex("Falls der Download nicht beginnt,\\&nbsp;<a class=\"b\" href=\"(http.*?)\"").getMatch(0);
-                if (dllink == null) {
-                    dllink = br.getRegex("class=\"dl\\-btn\"><a href=\"(http.*?)\"").getMatch(0);
-                }
-                if (dllink == null) {
-                    dllink = br.getRegex("</span></a></div><a href=\"(http.*?)\"").getMatch(0);
-                }
-                if (dllink == null) {
-                    dllink = br.getRegex("var adtech_dl_url = \\'(https?://[^<>\"]*?)\\';").getMatch(0);
-                }
-                if (dllink == null) {
-                    dllink = br.getRegex("(?:\"|\\')(https?://dl\\.cdn\\.chip\\.de/downloads/\\d+/.*?)(?:\"|\\')").getMatch(0);
+                    /* Old website layout */
+                    // TODO: Delete this when website layout is changed again
+                    logger.warning("Trying fallback to old website");
+                    final String step1 = br.getRegex("class=\"[^\"]*download_button[^\"]+\"[^>]*>\\s*<a rel=\"nofollow\"[^>]*href=\"(https?://[^\"]+)").getMatch(0);
+                    if (step1 == null) {
+                        /*
+                         * 2021-07-22: Treat such files as non-downloadable although this could also mean there is a plugin failure. Some
+                         * items are just "dummy" items which don't have any download options e.g.
+                         * https://www.chip.de/downloads/WordPress-Android-App_54778552.html
+                         */
+                        // throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+                        throw new PluginException(LinkStatus.ERROR_FATAL, textNoDownloadAvailable);
+                    }
+                    final String step1decoded = Encoding.htmlOnlyDecode(step1);
+                    String step1_query_url = UrlQuery.parse(step1decoded).get("url");
+                    if (step1_query_url != null) {
+                        step1_query_url = Encoding.htmlDecode(step1_query_url);
+                        br.getPage(step1_query_url);
+                    } else {
+                        br.getPage(step1decoded);
+                    }
+                    final String step2 = br.getRegex("(/downloads/c1_downloads_hs_getfile[^<>\"]+)\"").getMatch(0);
+                    if (step2 != null) {
+                        final String step2decoded = Encoding.htmlOnlyDecode(step2);
+                        br.getPage(step2decoded);
+                    } else {
+                        logger.warning("Failed to find step2 URL");
+                    }
+                    dllink = br.getRegex("Falls der Download nicht beginnt,\\&nbsp;<a class=\"b\" href=\"(http.*?)\"").getMatch(0);
+                    if (dllink == null) {
+                        dllink = br.getRegex("class=\"dl\\-btn\"><a href=\"(http.*?)\"").getMatch(0);
+                    }
+                    if (dllink == null) {
+                        dllink = br.getRegex("</span></a></div><a href=\"(http.*?)\"").getMatch(0);
+                    }
+                    if (dllink == null) {
+                        dllink = br.getRegex("var adtech_dl_url = \\'(https?://[^<>\"]*?)\\';").getMatch(0);
+                    }
+                    if (dllink == null) {
+                        dllink = br.getRegex("(?:\"|\\')(https?://dl\\.cdn\\.chip\\.de/downloads/\\d+/.*?)(?:\"|\\')").getMatch(0);
+                    }
                 }
                 if (dllink == null) {
                     if (!looksLikeDownloadIsPossible) {
@@ -417,6 +458,18 @@ public class ChipDe extends PluginForHost {
                     }
                 }
                 dl = jd.plugins.BrowserAdapter.openDownload(br, link, dllink, true, 1);
+                if (!this.looksLikeDownloadableContent(dl.getConnection())) {
+                    br.followConnection(true);
+                    handleServerErrors();
+                    if (!br.getHost().contains("chip")) {
+                        /*
+                         * Happens for software whos manufactors do not allow direct mirrors from chip servers e.g.
+                         * http://www.chip.de/downloads/Windows-10-64-Bit_72189999.html
+                         */
+                        throw new PluginException(LinkStatus.ERROR_FATAL, "External download - not possible via JDownloader!");
+                    }
+                    throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+                }
                 String etag = br.getRequest().getResponseHeader("ETag");
                 if (etag != null) {
                     /* chip.de servers will often return md5 file hash via headers! */
@@ -429,18 +482,6 @@ public class ChipDe extends PluginForHost {
                         }
                     } catch (final Throwable ignore) {
                     }
-                }
-                if (!this.looksLikeDownloadableContent(dl.getConnection())) {
-                    br.followConnection(true);
-                    handleServerErrors();
-                    if (!br.getHost().contains("chip")) {
-                        /*
-                         * Happens for software whos manufactors do not allow direct mirrors from chip servers e.g.
-                         * http://www.chip.de/downloads/Windows-10-64-Bit_72189999.html
-                         */
-                        throw new PluginException(LinkStatus.ERROR_FATAL, "External download - not possible via JDownloader!");
-                    }
-                    throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
                 }
             }
             link.setProperty(directlinkproperty, dl.getConnection().getURL().toExternalForm());
@@ -551,6 +592,9 @@ public class ChipDe extends PluginForHost {
         } else if (input.matches("\\d{4}\\-\\d{2}\\-\\d{2}\\d{2}:\\d{2}:\\d{2}")) {
             /* E.g. software/file downloads */
             date = TimeFormatter.getMilliSeconds(input, "yyyy-MM-dd'T'HH:mm:ss", Locale.GERMANY);
+        } else if (input.matches("\\d{4}\\-\\d{2}\\-\\d{2} \\d{2}:\\d{2}:\\d{2}")) {
+            /* 2026-08-31: E.g. software/file downloads (new website layout) */
+            date = TimeFormatter.getMilliSeconds(input, "yyyy-MM-dd HH:mm:ss", Locale.GERMANY);
         } else {
             /* Unsupported input date format */
             return null;

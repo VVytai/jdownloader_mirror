@@ -3512,8 +3512,8 @@ public class LinkCollector extends PackageController<CrawledPackage, CrawledLink
     }
 
     /**
-     * Returns true if the given link is a duplicate inside the linkgrabber, i.e. it shares its linkID with an earlier (topmost-first, in
-     * the real linkgrabber order) link and is therefore NOT the first occurrence.
+     * Returns true if the given link is a duplicate inside the linkgrabber, i.e. its linkID occurs at least twice. In that case every
+     * occurrence - including the first one - is reported as a duplicate.
      *
      * Always returns false while the dupe manager is enabled, because in that mode duplicates are never added to the linkgrabber in the
      * first place. The result is backed by a lazily computed, invalidation-based cache so that the per-link lookup used by the view filter
@@ -3545,23 +3545,33 @@ public class LinkCollector extends PackageController<CrawledPackage, CrawledLink
     }
 
     /**
-     * Computes the identity set of all duplicated links except the first occurrence of each, using the real linkgrabber order (package
-     * order, then child order) to decide which occurrence is "first". Not the current table sorting.
+     * Computes the identity set of all duplicated links. A link is considered a duplicate if its linkID occurs at least twice across the
+     * whole linkgrabber; in that case every occurrence - including the first one - is part of the returned set.
      */
     private Set<CrawledLink> computeLinkgrabberDupes() {
-        final Set<CrawledLink> dupes = Collections.newSetFromMap(new IdentityHashMap<CrawledLink, Boolean>());
-        final HashSet<String> seen = new HashSet<String>();
+        // First pass: group all links by their linkID (preserving encounter order per linkID).
+        final HashMap<String, List<CrawledLink>> byLinkID = new HashMap<String, List<CrawledLink>>();
         for (final CrawledPackage pkg : getPackagesCopy()) {
             final boolean readL = pkg.getModifyLock().readLock();
             try {
                 for (final CrawledLink link : pkg.getChildren()) {
                     final String linkID = link.getLinkID();
-                    if (!seen.add(linkID)) {
-                        dupes.add(link);
+                    List<CrawledLink> list = byLinkID.get(linkID);
+                    if (list == null) {
+                        list = new ArrayList<CrawledLink>();
+                        byLinkID.put(linkID, list);
                     }
+                    list.add(link);
                 }
             } finally {
                 pkg.getModifyLock().readUnlock(readL);
+            }
+        }
+        // Second pass: any linkID seen at least twice marks all of its occurrences (including the first) as duplicates.
+        final Set<CrawledLink> dupes = Collections.newSetFromMap(new IdentityHashMap<CrawledLink, Boolean>());
+        for (final List<CrawledLink> list : byLinkID.values()) {
+            if (list.size() >= 2) {
+                dupes.addAll(list);
             }
         }
         return dupes;

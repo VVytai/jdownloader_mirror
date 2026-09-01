@@ -50,7 +50,7 @@ import jd.plugins.PluginForDecrypt;
 import jd.plugins.PluginForHost;
 import jd.plugins.decrypter.ChoMikujPlFolder;
 
-@HostPlugin(revision = "$Revision: 52930 $", interfaceVersion = 3, names = { "chomikuj.pl" }, urls = { "" })
+@HostPlugin(revision = "$Revision: 53268 $", interfaceVersion = 3, names = { "chomikuj.pl" }, urls = { "" })
 public class ChoMikujPl extends PluginForHost {
     /* Plugin settings */
     public static final String   CRAWL_SUBFOLDERS                                             = "CRAWL_SUBFOLDERS";
@@ -293,7 +293,7 @@ public class ChoMikujPl extends PluginForHost {
         /* 2019-07-16: Points can be converted to traffic but for us they're not important */
         final String collectedPointsStr = br.getRegex("title=\"Punkty\"[^>]*?><strong>\\s*(\\d+)\\s*</strong>").getMatch(0);
         if (collectedPointsStr != null) {
-            ai.setPremiumPoints(collectedPointsStr);
+            ai.setPremiumPoints(Integer.parseInt(collectedPointsStr));
         } else {
             logger.info("Failed to find number of collected points");
         }

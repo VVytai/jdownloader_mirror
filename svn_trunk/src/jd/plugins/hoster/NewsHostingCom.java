@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.appwork.utils.Exceptions;
 import org.appwork.utils.StringUtils;
+import org.appwork.utils.formatter.SizeFormatter;
 import org.appwork.utils.formatter.TimeFormatter;
 import org.appwork.utils.net.usenet.InvalidAuthException;
 import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperHostPluginRecaptchaV2;
@@ -26,7 +27,7 @@ import jd.plugins.HostPlugin;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-@HostPlugin(revision = "$Revision: 52124 $", interfaceVersion = 3, names = { "newshosting.com" }, urls = { "" })
+@HostPlugin(revision = "$Revision: 53268 $", interfaceVersion = 3, names = { "newshosting.com" }, urls = { "" })
 public class NewsHostingCom extends UseNet {
     public NewsHostingCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -198,7 +199,7 @@ public class NewsHostingCom extends UseNet {
                     final String trafficLeft = br.getRegex("Bytes Remaining:</strong>\\s*(.*?)<").getMatch(0);
                     if (trafficLeft != null && trafficTotal != null) {
                         ai.setTrafficMax(Long.parseLong(trafficTotal));
-                        ai.setTrafficLeft(trafficLeft);
+                        ai.setTrafficLeft(SizeFormatter.getSize(trafficLeft, true, true));
                     }
                 }
             } catch (IOException e) {
