@@ -35,12 +35,18 @@ package org.appwork.sunwrapper.sun.swing;
 
 import java.awt.Component;
 import java.awt.FontMetrics;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import javax.swing.JComponent;
+import javax.swing.SwingUtilities;
 import javax.swing.text.DefaultCaret;
 import javax.swing.text.JTextComponent;
 
+import org.appwork.exceptions.WTFException;
+import org.appwork.utils.DebugMode;
 import org.appwork.utils.ReflectionUtils;
 
 public class SwingUtilities2Wrapper {
@@ -114,6 +120,73 @@ public class SwingUtilities2Wrapper {
         return null;
     }
 
+    private static final class CacheKey {
+        private final WeakReference<JComponent>  componentRef;
+        private final WeakReference<FontMetrics> fontMetricsRef;
+        private final String                     text;
+        private final int                        availWidth;
+        private final int                        hashCode;
+
+        private CacheKey(JComponent component, FontMetrics fm, String text, int availWidth) {
+            this.componentRef = new WeakReference<JComponent>(component);
+            this.fontMetricsRef = new WeakReference<FontMetrics>(fm);
+            this.text = text;
+            this.availWidth = availWidth;
+            // HashCode vorberechnen für O(1) Lookups
+            int h = System.identityHashCode(component);
+            h = 31 * h + (fm != null ? fm.hashCode() : 0);
+            h = 31 * h + (text != null ? text.hashCode() : 0);
+            h = 31 * h + availWidth;
+            this.hashCode = h;
+        }
+
+        public boolean isStale() {
+            // Ein Key ist "tot", wenn Component oder FontMetrics vom GC abgeräumt wurden
+            return componentRef.get() == null || fontMetricsRef.get() == null;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            } else if (!(obj instanceof CacheKey)) {
+                return false;
+            }
+            final CacheKey other = (CacheKey) obj;
+            if (this.hashCode != other.hashCode) {
+                return false;
+            } else if (this.availWidth != other.availWidth) {
+                return false;
+            } else if (this.text != null ? !this.text.equals(other.text) : other.text != null) {
+                return false;
+            }
+            final JComponent myComp = this.componentRef.get();
+            final JComponent otherComp = other.componentRef.get();
+            if (myComp == null || otherComp == null || myComp != otherComp) {
+                return false;
+            }
+            final FontMetrics myFm = this.fontMetricsRef.get();
+            final FontMetrics otherFm = other.fontMetricsRef.get();
+            return myFm != null && otherFm != null && myFm.equals(otherFm);
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+    }
+
+    // Nicht-synchronisierte LinkedHashMap mit LRU-Eviction & Stale-Entry Eviction
+    private static final Map<CacheKey, String> CACHE = new LinkedHashMap<CacheKey, String>(128, 0.75f, true) {
+        private final int MAX_ENTRIES = 2000;
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<CacheKey, String> eldest) {
+            // Lösche ältesten Eintrag wenn voll ODER wenn der Key vom GC abgeräumt wurde
+            return size() > MAX_ENTRIES || eldest.getKey().isStale();
+        }
+    };
+
     /**
      * @param rendererField
      * @param fontMetrics
@@ -123,24 +196,39 @@ public class SwingUtilities2Wrapper {
      */
     public static String clipStringIfNecessary(final JComponent component, final FontMetrics fontMetrics, final String str, final int availableWidth) {
         try {
+            if (DebugMode.TRUE_IN_IDE_ELSE_FALSE && !SwingUtilities.isEventDispatchThread()) {
+                new WTFException().printStackTrace();
+            }
             if (fontMetrics == null) {
                 throw new IllegalArgumentException("Fontmetrics may not be null");
+            }
+            if (availableWidth <= 0) {
+                return "";
+            } else if (str.length() == 0) {
+                return str;
+            }
+            final CacheKey key = new CacheKey(component, fontMetrics, str, availableWidth);
+            final String cached = CACHE.get(key);
+            if (cached != null) {
+                return cached;
             }
             Method method = clipStringIfNecessaryMethod;
             if (method == null && preferNativeClipStringMethod) {
                 clipStringIfNecessaryMethod = method = findClipStringMethod(component, fontMetrics, str, availableWidth);
             }
+            String ret = null;
             if (method != null) {
-                String ret = (String) method.invoke(null, new Object[] { component, fontMetrics, str, availableWidth });
-                // if there is not enought space for ...
+                ret = (String) method.invoke(null, new Object[] { component, fontMetrics, str, availableWidth });
+                // if there is not enough space for ...
                 while (ret.length() > 0 && ret.endsWith(".") && stringWidth(component, fontMetrics, ret) > availableWidth) {
                     ret = ret.substring(0, ret.length() - 1);
                 }
-                return ret;
             } else {
                 preferNativeClipStringMethod = false;
-                return internalClipStringIfNecessary(component, fontMetrics, str, availableWidth);
+                ret = internalClipStringIfNecessary(component, fontMetrics, str, availableWidth);
             }
+            CACHE.put(key, ret);
+            return ret;
         } catch (final NoClassDefFoundError e) {
             preferNativeClipStringMethod = false;
         } catch (final IllegalAccessError e) {

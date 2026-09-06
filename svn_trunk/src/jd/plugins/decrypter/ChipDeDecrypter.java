@@ -17,9 +17,13 @@ package jd.plugins.decrypter;
 
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
+import org.appwork.utils.StringUtils;
 import org.jdownloader.scripting.JavaScriptEngineFactory;
 
 import jd.PluginWrapper;
@@ -32,148 +36,156 @@ import jd.plugins.DecrypterPlugin;
 import jd.plugins.DownloadLink;
 import jd.plugins.FilePackage;
 import jd.plugins.LinkStatus;
+import jd.plugins.PluginDependencies;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
+import jd.plugins.hoster.ChipDe;
 import jd.plugins.hoster.DirectHTTP;
 
-@DecrypterPlugin(revision = "$Revision: 48374 $", interfaceVersion = 3, names = { "chip.de" }, urls = { "https?://(?:[A-Za-z0-9\\-]+\\.)?chip\\.de/(?!downloads|video)[^/]+/[^/]+_\\d+\\.html" })
+@DecrypterPlugin(revision = "$Revision: 53325 $", interfaceVersion = 3, names = {}, urls = {})
+@PluginDependencies(dependencies = { ChipDe.class })
 public class ChipDeDecrypter extends PluginForDecrypt {
     public ChipDeDecrypter(PluginWrapper wrapper) {
         super(wrapper);
     }
 
-    private static final boolean use_api_for_pictures = true;
+    public static List<String[]> getPluginDomains() {
+        return ChipDe.getPluginDomains();
+    }
 
-    @SuppressWarnings({ "unused", "unchecked", "rawtypes" })
+    public static String[] getAnnotationNames() {
+        return buildAnnotationNames(getPluginDomains());
+    }
+
+    @Override
+    public String[] siteSupportedNames() {
+        return buildSupportedNames(getPluginDomains());
+    }
+
+    public static String[] getAnnotationUrls() {
+        return buildAnnotationUrls(getPluginDomains());
+    }
+
+    /** The only supported url-type: image galleries e.g. /bildergalerie/<title>_<id>.html */
+    private static final Pattern PATTERN_PICTURES = Pattern.compile("/bildergalerie/([^/]+)_(\\d+)\\.html", Pattern.CASE_INSENSITIVE);
+
+    public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
+        final List<String> ret = new ArrayList<String>();
+        for (final String[] domains : pluginDomains) {
+            ret.add("https?://(?:[a-z0-9\\-]+\\.)?" + buildHostsPatternPart(domains) + PATTERN_PICTURES.pattern());
+        }
+        return ret.toArray(new String[0]);
+    }
+
+    @SuppressWarnings("unchecked")
     public ArrayList<DownloadLink> decryptIt(final CryptedLink param, ProgressController progress) throws Exception {
-        ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
         final String contenturl = param.getCryptedUrl();
-        final String linkid = new Regex(contenturl, "(\\d+)\\.html$").getMatch(0);
-        String fpName = null;
-        if (contenturl.matches(jd.plugins.hoster.ChipDe.type_chip_de_pictures) && !use_api_for_pictures) {
-            /* Old website picture handling */
-            br.setFollowRedirects(true);
-            URLConnectionAdapter con = null;
+        final Regex urlinfo = new Regex(contenturl, PATTERN_PICTURES);
+        final String titleFromURL = urlinfo.getMatch(0);
+        final String galleryID = urlinfo.getMatch(1);
+        br.setFollowRedirects(true);
+        URLConnectionAdapter con = null;
+        try {
+            con = br.openGetConnection(contenturl);
+            if (con.getResponseCode() == 404 || con.getResponseCode() == 410) {
+                throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+            }
+            br.followConnection();
+        } finally {
             try {
-                con = br.openGetConnection(contenturl);
-                if (con.getResponseCode() == 410) {
-                    throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
-                }
-                br.followConnection();
-            } finally {
-                try {
-                    con.disconnect();
-                } catch (Throwable e) {
-                }
-            }
-            fpName = br.getRegex("<meta property=\"og:title\" content=\"(.*?) \\- Bildergalerie\"/>").getMatch(0);
-            if (fpName == null) {
-                fpName = br.getRegex("<title>(.*?) \\- Bilder \\-").getMatch(0);
-            }
-            if (fpName == null) {
-                logger.warning("Decrypter broken for link:" + contenturl);
-                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-            }
-            fpName = fpName.trim();
-            String[] pictureNames = br.getRegex("bGrossversion\\[\\d+\\] = \"(.*?)\";").getColumn(0);
-            if (pictureNames == null || pictureNames.length == 0) {
-                pictureNames = br.getRegex("url \\+= \"/ii/grossbild_v2\\.html\\?grossbild=(.*?)\";").getColumn(0);
-            }
-            if (pictureNames == null || pictureNames.length == 0) {
-                logger.warning("Decrypter broken for link: " + contenturl);
-                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
-            }
-            final DecimalFormat df = new DecimalFormat("000");
-            int counter = 1;
-            for (String picName : pictureNames) {
-                // Skip invalid links, most times only the last link is invalid
-                picName = Encoding.htmlDecode(picName);
-                picName = picName.trim();
-                if (picName.equals("")) {
-                    continue;
-                }
-                final DownloadLink dl = createDownloadlink(DirectHTTP.createURLForThisPlugin("http://www.chip.de/ii/" + picName));
-                dl.setFinalFileName(fpName + "_" + df.format(counter) + picName.substring(picName.lastIndexOf(".")));
-                dl.setAvailable(true);
-                ret.add(dl);
-                counter++;
-            }
-        } else {
-            jd.plugins.hoster.ChipDe.prepBRAPI(this.br);
-            jd.plugins.hoster.ChipDe.accesscontainerIdBeitrag(this.br, linkid);
-            /* We're using an API here so whatever goes wrong - it is probably a website issue / offline content. */
-            try {
-                Map<String, Object> entries = (Map<String, Object>) JavaScriptEngineFactory.jsonToJavaObject(this.br.toString());
-                fpName = (String) entries.get("title");
-                final List<Object> resource_data_list;
-                if (contenturl.matches(jd.plugins.hoster.ChipDe.type_chip_de_pictures)) {
-                    final DecimalFormat df = new DecimalFormat("000");
-                    int counter = 1;
-                    resource_data_list = (List) entries.get("pictures");
-                    for (final Object oo : resource_data_list) {
-                        try {
-                            entries = (Map<String, Object>) oo;
-                            final String description = (String) entries.get("image_text");
-                            final String url = (String) entries.get("url");
-                            if (inValidate(url)) {
-                                continue;
-                            }
-                            String url_name = new Regex(url, "([^/]+)$").getMatch(0);
-                            final DownloadLink dl = this.createDownloadlink(DirectHTTP.createURLForThisPlugin(url));
-                            dl.setAvailable(true);
-                            if (!inValidate(description)) {
-                                dl.setComment(description);
-                            }
-                            if (!inValidate(url_name)) {
-                                url_name = df.format(counter) + "_" + url_name;
-                                dl.setFinalFileName(url_name);
-                            }
-                            ret.add(dl);
-                        } finally {
-                            counter++;
-                        }
-                    }
-                } else {
-                    /* User added an article - try to find embedded videos! */
-                    resource_data_list = (List) entries.get("videos");
-                    for (final Object oo : resource_data_list) {
-                        entries = (Map<String, Object>) oo;
-                        final String url = (String) entries.get("url");
-                        if (inValidate(url) || !url.matches(jd.plugins.hoster.ChipDe.type_chip_de_video)) {
-                            continue;
-                        }
-                        final DownloadLink dl = this.createDownloadlink(url);
-                        ret.add(dl);
-                    }
-                }
+                con.disconnect();
             } catch (final Throwable e) {
             }
         }
-        if (fpName != null) {
-            FilePackage fp = FilePackage.getInstance();
-            fp.setName(Encoding.htmlDecode(fpName));
-            fp.addLinks(ret);
+        /*
+         * The gallery images are exposed via a schema.org "NewsArticle" JSON-LD block. Its "image" array lists all pictures (with
+         * captions). A single picture can appear multiple times with different crop-transforms in the URL - we only want the first (=
+         * highest resolution) variant per picture thus we de-duplicate by the base url (part before the '?').
+         */
+        final String[] ldBlocks = br.getRegex("<script[^>]*type=\"application/ld\\+json\"[^>]*>\\s*(\\{.*?\\})\\s*</script>").getColumn(0);
+        if (ldBlocks == null || ldBlocks.length == 0) {
+            if (br.getHttpConnection().getResponseCode() == 200) {
+                throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+            } else {
+                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+            }
         }
+        String title = null;
+        List<Object> images = null;
+        for (final String ldBlock : ldBlocks) {
+            final Object jsonO = JavaScriptEngineFactory.jsonToJavaObject(ldBlock);
+            if (!(jsonO instanceof Map)) {
+                continue;
+            }
+            final Map<String, Object> entries = (Map<String, Object>) jsonO;
+            if (!"NewsArticle".equals(entries.get("@type"))) {
+                continue;
+            }
+            title = (String) entries.get("headline");
+            final Object imageO = entries.get("image");
+            if (imageO instanceof List) {
+                images = (List<Object>) imageO;
+            } else if (imageO instanceof Map) {
+                /* Single picture galleries */
+                images = new ArrayList<Object>();
+                images.add(imageO);
+            }
+            break;
+        }
+        if (images == null || images.isEmpty()) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+        }
+        if (!StringUtils.isEmpty(title)) {
+            title = Encoding.htmlDecode(title).trim();
+            title = title.replaceFirst("Bildergalerie: ", "");
+        } else {
+            /* Fallback */
+            title = titleFromURL;
+        }
+        final DecimalFormat df = new DecimalFormat("000");
+        final Set<String> dupes = new HashSet<String>();
+        int counter = 1;
+        for (final Object imageO : images) {
+            final Map<String, Object> imageEntry = (Map<String, Object>) imageO;
+            final String url = (String) imageEntry.get("url");
+            if (StringUtils.isEmpty(url)) {
+                continue;
+            }
+            final String urlBase = url.contains("?") ? url.substring(0, url.indexOf("?")) : url;
+            if (!dupes.add(urlBase)) {
+                /* Skip crop-variants of a picture we already added */
+                continue;
+            }
+            final DownloadLink link = createDownloadlink(DirectHTTP.createURLForThisPlugin(url));
+            String ext = new Regex(urlBase, "(\\.[A-Za-z0-9]+)$").getMatch(0);
+            if (ext == null) {
+                ext = ".jpg";
+            }
+            if (!StringUtils.isEmpty(title)) {
+                link.setFinalFileName(Encoding.htmlDecode(title).trim() + "_" + df.format(counter) + ext);
+            }
+            final String caption = (String) imageEntry.get("caption"); // optional
+            if (!StringUtils.isEmpty(caption)) {
+                link.setComment(Encoding.htmlDecode(caption).trim());
+            }
+            link.setAvailable(true);
+            ret.add(link);
+            counter++;
+        }
+        final FilePackage fp = FilePackage.getInstance();
+        if (!StringUtils.isEmpty(title)) {
+            fp.setName(title);
+        } else {
+            /* Fallback */
+            fp.setName(galleryID);
+        }
+        fp.setPackageKey("chipde://gallery/" + galleryID);
+        fp.addLinks(ret);
         return ret;
     }
 
-    /**
-     * Validates string to series of conditions, null, whitespace, or "". This saves effort factor within if/for/while statements
-     *
-     * @param s
-     *            Imported String to match against.
-     * @return <b>true</b> on valid rule match. <b>false</b> on invalid rule match.
-     * @author raztoki
-     */
-    protected boolean inValidate(final String s) {
-        if (s == null || s.matches("\\s+") || s.equals("")) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    /* NO OVERRIDE!! */
+    @Override
     public boolean hasCaptcha(CryptedLink link, jd.plugins.Account acc) {
         return false;
     }

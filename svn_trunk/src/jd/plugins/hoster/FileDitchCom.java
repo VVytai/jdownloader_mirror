@@ -15,6 +15,7 @@
 //along with this program.  If not, see <http://www.gnu.org/licenses/>.
 package jd.plugins.hoster;
 
+import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +35,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53126 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53306 $", interfaceVersion = 3, names = {}, urls = {})
 public class FileDitchCom extends PluginForHost {
     public FileDitchCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -52,7 +53,7 @@ public class FileDitchCom extends PluginForHost {
         return "https://" + getHost();
     }
 
-    private static List<String[]> getPluginDomains() {
+    protected static List<String[]> getPluginDomains() {
         final List<String[]> ret = new ArrayList<String[]>();
         // each entry in List<String[]> will result in one PluginForHost, Plugin.getHost() will return String[0]->main domain
         ret.add(new String[] { "fileditchfiles.st", "fileditchfiles.me", "fileditch.com", "theditch.st" });
@@ -79,10 +80,10 @@ public class FileDitchCom extends PluginForHost {
     }
 
     /** New URL type e.g. https://fileditchfiles.st/balpha1/43339e614f5b3f28ebb9/00_Testdata.part3.rar */
-    private static final Pattern PATTERN_FILE       = Pattern.compile("/[^/]+/([a-f0-9]+)/([^/\\?#]+)");
+    protected static final Pattern PATTERN_FILE       = Pattern.compile("/[^/]+/([a-f0-9]+)/([^/\\?#]+)");
     /** Old URL type e.g. https://fileditchfiles.me/file.php?f=/abc123/00_Testdata.part3.rar */
-    private static final Pattern PATTERN_FILE_OLD   = Pattern.compile("/file\\.php\\?f=/([a-z0-9]{3,})/([^/#\\?]+)");
-    private static final Pattern PATTERN_FILE_SHORT = Pattern.compile("/([a-z0-9]{8})");
+    protected static final Pattern PATTERN_FILE_OLD   = Pattern.compile("/file\\.php\\?f=/([a-z0-9]{3,})/([^/#\\?]+)");
+    protected static final Pattern PATTERN_FILE_SHORT = Pattern.compile("/([a-z0-9]{8})");
 
     public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
         final List<String> ret = new ArrayList<String>();
@@ -130,14 +131,30 @@ public class FileDitchCom extends PluginForHost {
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws Exception {
         br.getPage(link.getPluginPatternMatcher());
-        handleAntiBotChallenge(br);
+        final boolean antiBotChallengeDone = handleAntiBotChallenge(br);
         if (br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         } else if (br.containsHTML("<h2>\\s*File unreachable\\s*</h2>")) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+        } else if (br.containsHTML(">\\s*This file has probably been removed")) {
+            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
-        link.setDownloadSize(SizeFormatter.getSize(null, br.getRegex("<span class=\"size\">([^<]+)</span>").getMatch(0), true, false));
+        handleJsRedirect(br);
+        final String filesizeStr = br.getRegex("<span class=\"size\">([^<]+)</span>").getMatch(0);
+        if (filesizeStr != null) {
+            link.setDownloadSize(SizeFormatter.getSize(null, filesizeStr, true, false));
+        }
+        if (!antiBotChallengeDone) {
+            /*
+             * We cannot determine the status and we cannot get the file info (such as file size) without handling the anti bot challenge!
+             */
+            return AvailableStatus.UNCHECKABLE;
+        }
         return AvailableStatus.TRUE;
+    }
+
+    protected void handleJsRedirect(final Browser br) throws IOException {
+        /* Placeholder */
     }
 
     @Override
@@ -145,7 +162,7 @@ public class FileDitchCom extends PluginForHost {
         requestFileInformation(link);
         final String js = br.getRegex("var u = \\[(.*?)\\]\\.join\\(\"\"\\)").getMatch(0);
         if (js == null) {
-            throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
         final String dllink = js.replace("\",\"", "").replace("\"", "").replace("\\", "");
         dl = jd.plugins.BrowserAdapter.openDownload(br, link, dllink, true, 0);
@@ -156,9 +173,10 @@ public class FileDitchCom extends PluginForHost {
     /**
      * Detects and solves the JavaScript proof-of-work anti-bot challenge ("Verifying your browser…"). </br>
      * The site hands out a hidden form which requires a nonce so that SHA-256(pow_challenge + ":" + nonce) has "pow_diff" leading zero
-     * bits. Once solved, the form is posted back and the real page is returned.
+     * bits. Once solved, the form is posted back and the real page is returned. <br>
+     * 2026-09-01: all of this is broken as they've changed their anti bot stuff.
      */
-    private void handleAntiBotChallenge(final Browser br) throws Exception {
+    protected boolean handleAntiBotChallenge(final Browser br) throws Exception {
         int round = 0;
         while (br.containsHTML("name\\s*=\\s*\"pow_challenge\"")) {
             if (round++ >= 3) {
@@ -180,15 +198,21 @@ public class FileDitchCom extends PluginForHost {
             final String nonce = solveProofOfWork(challenge, diff);
             pow.put("pow_nonce", nonce);
             br.submitForm(pow);
+            return true;
         }
+        return false;
     }
 
     /** Brute-forces a nonce so that SHA-256(challenge + ":" + nonce) has the requested number of leading zero bits. */
     private String solveProofOfWork(final String challenge, final int diff) throws Exception {
         final MessageDigest md = MessageDigest.getInstance("SHA-256");
         final String prefix = challenge + ":";
-        long nonce = 0;
-        while (true) {
+        /*
+         * The proof-of-work needs on average ~2^diff hashes. Cap the search at a realistic multiple of that (clamped to 2^28 iterations) so
+         * a broken or abusive challenge can never spin here forever -> give up loudly instead.
+         */
+        final long maxIterations = 1L << Math.min(diff + 8, 28);
+        for (long nonce = 0; nonce < maxIterations; nonce++) {
             if (this.isAbort()) {
                 throw new InterruptedException();
             }
@@ -197,8 +221,8 @@ public class FileDitchCom extends PluginForHost {
             if (hasLeadingZeroBits(hash, diff)) {
                 return Long.toString(nonce);
             }
-            nonce++;
         }
+        throw new PluginException(LinkStatus.ERROR_TEMPORARILY_UNAVAILABLE, "Failed to solve anti-bot proof-of-work within " + maxIterations + " iterations");
     }
 
     private boolean hasLeadingZeroBits(final byte[] bytes, final int need) {

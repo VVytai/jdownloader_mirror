@@ -1823,6 +1823,10 @@ public class Browser implements HTTPConnectionFactoryInterface {
     public boolean isVerbose() {
         return Browser.VERBOSE || this.verbose;
     }
+    
+    protected Request onRequestRead(Request request) throws IOException {
+        return request.read(this.isKeepResponseContentBytes());
+    }
 
     /**
      * Reads the content behind a con and returns them. Note: if con==null, the current request is read. This is useful for redirects. Note
@@ -1863,14 +1867,14 @@ public class Browser implements HTTPConnectionFactoryInterface {
             this.prepareBlockDetectionBeforeLoadConnection(requ);
             try {
                 try {
-                    requ.read(this.isKeepResponseContentBytes());
+                    onRequestRead(requ);
                 } catch (HTTPResponseCodeException e) {
                     final URLConnectionAdapter con = requ.getHttpConnection();
                     if (con != null) {
                         try {
                             con.setAllResponseCodesAllowed(true);
                             try {
-                                requ.read(this.isKeepResponseContentBytes());
+                                onRequestRead(requ);
                             } finally {
                                 con.setAllResponseCodesAllowed(false);
                             }
@@ -1921,7 +1925,7 @@ public class Browser implements HTTPConnectionFactoryInterface {
             return;
         }
         final RequestHeader requestHeaders = request.getHeaders();
-        if (requestHeaders.getValue("Sec-Fetch-Site") != null) {
+        if (requestHeaders.getValue(HTTPConstants.HEADER_REQUEST_SEC_FETCH_SITE) != null) {
             return;
         }
         boolean addSecFetchSite = false;
@@ -1945,9 +1949,10 @@ public class Browser implements HTTPConnectionFactoryInterface {
         if (edgeVersion >= 79) {
             addSecFetchSite = true;
         }
-        if (addSecFetchSite) {
-            requestHeaders.put(new HTTPHeader("Sec-Fetch-Site", "same-origin"));
+        if (!addSecFetchSite) {
+            return;
         }
+        requestHeaders.put(new HTTPHeader(HTTPConstants.HEADER_REQUEST_SEC_FETCH_SITE, "same-origin"));
     }
 
     /**

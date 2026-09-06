@@ -16,7 +16,6 @@ import jd.controlling.downloadcontroller.SingleDownloadController;
 import jd.controlling.downloadcontroller.event.DownloadWatchdogListener;
 import net.miginfocom.swing.MigLayout;
 
-import org.appwork.storage.config.ValidationException;
 import org.appwork.storage.config.swing.models.ConfigIntSpinnerModel;
 import org.appwork.swing.components.ExtCheckBox;
 import org.appwork.swing.components.SizeSpinner;
@@ -34,8 +33,10 @@ public class SpeedlimitEditor extends MenuEditor implements DownloadWatchdogList
      */
     private static final long      serialVersionUID = 5406904697287119514L;
     private JLabel                 lbl;
-    private SizeSpinner            spinner;
-    private ExtCheckBox            checkbox;
+    private SizeSpinner            speedSpinner;
+    private SizeSpinner            pauseSpinner;
+    private ExtCheckBox            speedCheckbox;
+    private ExtCheckBox            pauseCheckbox;
     private static final SPEEDUNIT maxSpeedUnit     = CFG_GUI.CFG.getMaxSpeedUnit();
 
     public SpeedlimitEditor() {
@@ -44,27 +45,41 @@ public class SpeedlimitEditor extends MenuEditor implements DownloadWatchdogList
 
     public SpeedlimitEditor(boolean b) {
         super(b);
-        setLayout(new MigLayout("ins " + getInsetsString(), "6[grow,fill][][]", "[" + getComponentHeight() + "!]"));
+        setLayout(new MigLayout("ins " + getInsetsString() + ", hidemode 3", "6[grow,fill][][]", "[" + getComponentHeight() + "!]"));
         setOpaque(false);
         lbl = getLbl(_GUI.T.SpeedlimitEditor_SpeedlimitEditor_(), new AbstractIcon(IconKey.ICON_SPEED, 18));
-        spinner = new SizeSpinner(new ConfigIntSpinnerModel(org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT) {
-            /**
-             *
-             */
-            private static final long serialVersionUID = -8549816276073605186L;
+        /* regular controls, natively bound to the download speed limit config */
+        speedSpinner = createSpinner(new ConfigIntSpinnerModel(org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT));
+        speedCheckbox = new ExtCheckBox(org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED, lbl);
+        speedCheckbox.setVerticalAlignment(SwingConstants.CENTER);
+        /*
+         * Pause controls, laid out in the same cells as the regular ones and only shown while paused. The pause spinner
+         * is natively bound to the separate pause speed config (so keyboard up/down and the displayed value work
+         * correctly), and the pause checkbox is a display-only dummy: always checked and greyed out. Pause mode
+         * therefore never touches the persistent download speed limit config.
+         */
+        pauseSpinner = createSpinner(new ConfigIntSpinnerModel(org.jdownloader.settings.staticreferences.CFG_GENERAL.PAUSE_SPEED));
+        pauseCheckbox = new ExtCheckBox();
+        pauseCheckbox.setSelected(true);
+        pauseCheckbox.setEnabled(false);
+        pauseCheckbox.setVerticalAlignment(SwingConstants.CENTER);
+        /* start in the regular (non-pause) look; the pause controls are shown on state change */
+        pauseSpinner.setVisible(false);
+        pauseCheckbox.setVisible(false);
+        add(lbl, "cell 0 0");
+        add(speedCheckbox, "cell 1 0, width 20!");
+        add(pauseCheckbox, "cell 1 0, width 20!");
+        add(speedSpinner, "cell 2 0, width " + getEditorWidth() + "!");
+        add(pauseSpinner, "cell 2 0, width " + getEditorWidth() + "!");
+        DownloadWatchDog.getInstance().getEventSender().addListener(this, true);
+        DownloadWatchDog.getInstance().notifyCurrentState(this);
+    }
 
-            @Override
-            public void setValue(Object value) {
-                if (DownloadWatchDog.getInstance().isPaused()) {
-                    try {
-                        org.jdownloader.settings.staticreferences.CFG_GENERAL.PAUSE_SPEED.setValue(((Number) value).intValue());
-                    } catch (ValidationException e) {
-                        java.awt.Toolkit.getDefaultToolkit().beep();
-                    }
-                }
-                super.setValue(value);
-            }
-        }) {
+    /**
+     * Creates a speed spinner with the shared text/format behaviour, bound to the given config model.
+     */
+    private SizeSpinner createSpinner(final ConfigIntSpinnerModel model) {
+        final SizeSpinner sp = new SizeSpinner(model) {
             /**
              *
              */
@@ -101,7 +116,7 @@ public class SpeedlimitEditor extends MenuEditor implements DownloadWatchdogList
             }
         };
         try {
-            ((DefaultEditor) spinner.getEditor()).getTextField().addFocusListener(new FocusListener() {
+            ((DefaultEditor) sp.getEditor()).getTextField().addFocusListener(new FocusListener() {
                 @Override
                 public void focusLost(FocusEvent e) {
                 }
@@ -112,7 +127,7 @@ public class SpeedlimitEditor extends MenuEditor implements DownloadWatchdogList
                     SwingUtilities.invokeLater(new Runnable() {
                         @Override
                         public void run() {
-                            ((DefaultEditor) spinner.getEditor()).getTextField().selectAll();
+                            ((DefaultEditor) sp.getEditor()).getTextField().selectAll();
                         }
                     });
                 }
@@ -121,66 +136,57 @@ public class SpeedlimitEditor extends MenuEditor implements DownloadWatchdogList
             e.printStackTrace();
             // too much fancy Casting.
         }
-        add(lbl);
-        add(checkbox = new ExtCheckBox(org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED, lbl), "width 20!");
-        checkbox.setVerticalAlignment(SwingConstants.CENTER);
-        DownloadWatchDog.getInstance().getEventSender().addListener(this, true);
-        add(spinner, "width " + getEditorWidth() + "!");
-        DownloadWatchDog.getInstance().notifyCurrentState(this);
+        return sp;
     }
 
     @Override
     public void onDownloadWatchdogDataUpdate() {
     }
 
-    @Override
-    public void onDownloadWatchdogStateIsIdle() {
+    /**
+     * Switches between the regular controls and the pause controls. While paused the pause spinner/checkbox are shown on
+     * top of (in the same cells as) the regular ones, so the editor displays and edits the pause speed without ever
+     * touching the persistent download speed limit config.
+     */
+    private void updateEditorState(final boolean paused) {
         new EDTRunner() {
             @Override
             protected void runInEDT() {
-                checkbox.setEnabled(true);
+                speedCheckbox.setVisible(!paused);
+                speedSpinner.setVisible(!paused);
+                pauseCheckbox.setVisible(paused);
+                pauseSpinner.setVisible(paused);
+                /* while paused the limit is always active, so keep the label enabled; otherwise follow the checkbox */
+                lbl.setEnabled(paused || speedCheckbox.isSelected());
+                revalidate();
+                repaint();
             }
         };
+    }
+
+    @Override
+    public void onDownloadWatchdogStateIsIdle() {
+        updateEditorState(false);
     }
 
     @Override
     public void onDownloadWatchdogStateIsPause() {
-        new EDTRunner() {
-            @Override
-            protected void runInEDT() {
-                checkbox.setEnabled(false);
-            }
-        };
+        updateEditorState(true);
     }
 
     @Override
     public void onDownloadWatchdogStateIsRunning() {
-        new EDTRunner() {
-            @Override
-            protected void runInEDT() {
-                checkbox.setEnabled(true);
-            }
-        };
+        updateEditorState(false);
     }
 
     @Override
     public void onDownloadWatchdogStateIsStopped() {
-        new EDTRunner() {
-            @Override
-            protected void runInEDT() {
-                checkbox.setEnabled(true);
-            }
-        };
+        updateEditorState(false);
     }
 
     @Override
     public void onDownloadWatchdogStateIsStopping() {
-        new EDTRunner() {
-            @Override
-            protected void runInEDT() {
-                checkbox.setEnabled(true);
-            }
-        };
+        updateEditorState(false);
     }
 
     @Override

@@ -53,7 +53,6 @@ public class SpeedColumn extends ExtTextColumn<AbstractNode> {
     private static final long   serialVersionUID    = 1L;
     private final AtomicBoolean warningEnabled      = new AtomicBoolean(false);
     private final Icon          warningIcon;
-    private final AtomicBoolean speedLimiterEnabled = new AtomicBoolean(false);
     private final DecimalFormat formatter;
     private final SPEEDUNIT     maxSpeedUnit;
 
@@ -72,15 +71,6 @@ public class SpeedColumn extends ExtTextColumn<AbstractNode> {
             }
         });
         warningIcon = NewTheme.I().getIcon(IconKey.ICON_WARNING, 16);
-        speedLimiterEnabled.set(org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED.isEnabled());
-        org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED.getEventSender().addListener(new GenericConfigEventListener<Boolean>() {
-            public void onConfigValidatorError(KeyHandler<Boolean> keyHandler, Boolean invalidValue, ValidationException validateException) {
-            }
-
-            public void onConfigValueModified(KeyHandler<Boolean> keyHandler, Boolean newValue) {
-                speedLimiterEnabled.set(Boolean.TRUE.equals(newValue));
-            }
-        }, false);
         this.formatter = new DecimalFormat("0.00");
         maxSpeedUnit = CFG_GUI.CFG.getMaxSpeedUnit();
         this.setRowSorter(new ExtDefaultRowSorter<AbstractNode>() {
@@ -122,7 +112,8 @@ public class SpeedColumn extends ExtTextColumn<AbstractNode> {
     @Override
     public void configureRendererComponent(AbstractNode value, boolean isSelected, boolean hasFocus, int row, int column) {
         super.configureRendererComponent(value, isSelected, hasFocus, row, column);
-        if (speedLimiterEnabled.get()) {
+        /* effective limit incl. pause speed while paused (0 = no limit) */
+        if (DownloadWatchDog.getInstance().getDownloadSpeedManager().getLimit() > 0) {
             rendererField.setForeground(Color.RED);
         } else {
             rendererField.setForeground(null);
@@ -184,8 +175,10 @@ public class SpeedColumn extends ExtTextColumn<AbstractNode> {
     @Override
     protected String getTooltipText(AbstractNode obj) {
         final String ret = super.getTooltipText(obj);
-        if (speedLimiterEnabled.get()) {
-            final String limit = _GUI.T.SpeedMeterPanel_getString_limited(SizeFormatter.formatBytes(org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT.getValue()));
+        /* effective limit incl. pause speed while paused (0 = no limit) */
+        final int effectiveLimit = DownloadWatchDog.getInstance().getDownloadSpeedManager().getLimit();
+        if (effectiveLimit > 0) {
+            final String limit = _GUI.T.SpeedMeterPanel_getString_limited(SizeFormatter.formatBytes(effectiveLimit));
             return limit + "\r\n" + ret;
         } else {
             return ret;

@@ -20,9 +20,6 @@ public class CompiledLinkgrabberDupeFilter extends LinkgrabberDupeFilter impleme
         if (link == null) {
             return false;
         }
-        // A duplicate inside the linkgrabber is only meaningful when the dupe manager is disabled (otherwise duplicates are
-        // never added in the first place). LinkCollector.isLinkgrabberDupe() already returns false when the dupe manager is
-        // enabled, so no extra guard is required here.
         final boolean isDupe = LinkCollector.getInstance().isLinkgrabberDupe(link);
         switch (getMatchType()) {
         case IS_TRUE:

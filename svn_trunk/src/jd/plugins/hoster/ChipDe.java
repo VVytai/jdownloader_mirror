@@ -46,7 +46,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.components.PluginJSonUtils;
 
-@HostPlugin(revision = "$Revision: 53269 $", interfaceVersion = 2, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53275 $", interfaceVersion = 2, names = {}, urls = {})
 public class ChipDe extends PluginForHost {
     public ChipDe(PluginWrapper wrapper) {
         super(wrapper);
@@ -389,6 +389,17 @@ public class ChipDe extends PluginForHost {
                  * - modifying "deliver" of another variant would invalidate that signature. </br> The inner "url" value is purely
                  * percent-encoded (no quotes/backslashes) thus we can grab it directly regardless of the surrounding JSON escaping.
                  */
+                /*
+                 * 2026-09-01: Detect externally hosted downloads early (new website layout). The download button URL carries a tracking
+                 * parameter "a017" which equals "chip" for downloads hosted on chip.de servers and the (url-encoded) external target URL
+                 * otherwise, e.g. the Google Play Store / apkmirror.com. Such items are only offered as a redirect to a third party thus
+                 * cannot be downloaded via this plugin.
+                 */
+                final String downloadSource = br.getRegex("[&?]a017=([^&\"\\\\]+)").getMatch(0);
+                if (downloadSource != null && !downloadSource.equalsIgnoreCase("chip")) {
+                    /* Example: https://www.chip.de/downloads/Google-Play-Store-APK_54923571.html */
+                    errorExternalDownloadImpossible();
+                }
                 final String getfilePatternStart = "url=(https%3A%2F%2F(?:www\\.)?chip\\.de%2Fdownloads%2Fgetfile%2F[^\"&\\\\]*";
                 final String getfilePatternEnd = "[^\"&\\\\]*)";
                 String getfileUrl = br.getRegex(getfilePatternStart + "deliver%3Dweb" + getfilePatternEnd).getMatch(0);

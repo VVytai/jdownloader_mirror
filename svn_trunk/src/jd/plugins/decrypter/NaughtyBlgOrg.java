@@ -27,6 +27,8 @@ import org.appwork.utils.StringUtils;
 import org.jdownloader.captcha.v2.challenge.hcaptcha.CaptchaHelperCrawlerPluginHCaptcha;
 import org.jdownloader.captcha.v2.challenge.recaptcha.v2.CaptchaHelperCrawlerPluginRecaptchaV2;
 import org.jdownloader.plugins.components.antiDDoSForDecrypt;
+import org.jdownloader.plugins.components.config.NaughtyBlgOrgConfig;
+import org.jdownloader.plugins.config.PluginJsonConfig;
 
 import jd.PluginWrapper;
 import jd.controlling.ProgressController;
@@ -43,7 +45,7 @@ import jd.plugins.FilePackage;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-@DecrypterPlugin(revision = "$Revision: 53267 $", interfaceVersion = 5, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53284 $", interfaceVersion = 5, names = {}, urls = {})
 public class NaughtyBlgOrg extends antiDDoSForDecrypt {
     private enum Category {
         UNDEF,
@@ -190,19 +192,24 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
          * Step 2: Optionally crawl the "spare links" which are hidden behind a captcha. This is more expensive as it requires the user to
          * solve a captcha.
          */
-        // TODO: Replace this hardcoded boolean with a plugin setting.
+        /*
+         * Detect items where the freely accessible links only lead to image previews while the real download links are hidden behind the
+         * captcha. Such items use an "All Previews:" heading instead of the usual "Download:" heading. In this case the captcha must always
+         * be solved, otherwise the user would only end up with preview links.
+         */
+        final boolean onlyPreviewLinksWithoutCaptcha = br.containsHTML(">\\s*All Previews\\s*:");
         final boolean crawlSpareLinksBehindCaptcha;
         if (ret.isEmpty()) {
             logger.info("Crawling captcha protected items because: Failed to find non protected items");
             crawlSpareLinksBehindCaptcha = true;
+        } else if (onlyPreviewLinksWithoutCaptcha) {
+            logger.info("Crawling captcha protected items because: Without a captcha only preview links are available");
+            crawlSpareLinksBehindCaptcha = true;
         } else if (StringUtils.endsWithCaseInsensitive(contenturl, "#nocaptcha")) {
             logger.info("Avoiding captcha because: User added #nocaptcha to URL");
             crawlSpareLinksBehindCaptcha = false;
-        } else if (true) {
-            // TODO: Add plugin setting
-            crawlSpareLinksBehindCaptcha = true;
         } else {
-            crawlSpareLinksBehindCaptcha = false;
+            crawlSpareLinksBehindCaptcha = PluginJsonConfig.get(NaughtyBlgOrgConfig.class).isCrawlCaptchaProtectedSpareLinks();
         }
         if (crawlSpareLinksBehindCaptcha) {
             final String downloadhidden = crawlSpareLinks();
@@ -280,6 +287,11 @@ public class NaughtyBlgOrg extends antiDDoSForDecrypt {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
         return (String) response.get("content");
+    }
+
+    @Override
+    public Class<? extends NaughtyBlgOrgConfig> getConfigInterface() {
+        return NaughtyBlgOrgConfig.class;
     }
 
     private String getFpName(String filePackageName) {

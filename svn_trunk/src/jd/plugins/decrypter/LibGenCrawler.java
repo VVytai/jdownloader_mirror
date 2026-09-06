@@ -43,7 +43,7 @@ import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.DirectHTTP;
 import jd.plugins.hoster.LibGenInfo;
 
-@DecrypterPlugin(revision = "$Revision: 52824 $", interfaceVersion = 2, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53277 $", interfaceVersion = 2, names = {}, urls = {})
 public class LibGenCrawler extends PluginForDecrypt {
     public LibGenCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -86,6 +86,9 @@ public class LibGenCrawler extends PluginForDecrypt {
         deadDomains.add("libgen.pm");
         deadDomains.add("libgen.rocks");
         deadDomains.add("libgen.st");
+        deadDomains.add("libgen.bz");
+        deadDomains.add("libgen.ee");
+        deadDomains.add("libgen.rs");
         deadDomains.add("library.lol");
         return deadDomains;
     }

@@ -212,11 +212,21 @@ public class MultiHostHost implements DownloadControllerListener {
         this.setLinksMax(max);
     }
 
+    /**
+     * Returns the remaining traffic in bytes for this host. </br>
+     * The returned value can be negative if this host is out of traffic (e.g. overdrawn); callers should treat any value <= 0 as "no traffic
+     * left". Returns 0 if no traffic value has been set. Use {@link #isUnlimitedTraffic()} to check for unlimited traffic before interpreting
+     * the returned value.
+     */
     public long getTrafficLeft() {
         final Long value = trafficLeft;
-        return value != null ? value : -1;
+        return value != null ? value : 0;
     }
 
+    /**
+     * Sets the remaining traffic in bytes for this host. </br>
+     * Negative values are allowed and stored as-is (overdrawn host); the value is not clamped.
+     */
     public void setTrafficLeft(long trafficLeft) {
         this.trafficLeft = trafficLeft;
         setUnlimitedTraffic(false);

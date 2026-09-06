@@ -45,7 +45,7 @@ import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.DirectHTTP;
 import jd.plugins.hoster.ORFMediathek;
 
-@DecrypterPlugin(revision = "$Revision: 53094 $", interfaceVersion = 2, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53304 $", interfaceVersion = 2, names = {}, urls = {})
 public class OrfAt extends PluginForDecrypt {
     public OrfAt(PluginWrapper wrapper) {
         super(wrapper);
@@ -319,6 +319,7 @@ public class OrfAt extends PluginForDecrypt {
          * to be GEO-blocked, the GEO exception is thrown as usual (see progressive filesize check below).
          */
         boolean geoBlockedForceProgressiveOnly = false;
+        boolean progressiveBroken = false;
         crawlSegments: {
             if (has_active_youth_protection) {
                 /* Age restricted items are only ever accessible via the gapless stream -> skip segment handling entirely. */
@@ -341,7 +342,7 @@ public class OrfAt extends PluginForDecrypt {
              * the normal "return everything if the selection matches nothing" fallback.
              */
             final boolean wantsQualityAboveProgressiveCap = containsHeightAbove(selectedQualities, 720);
-            final boolean crawlHLS = user_wants_HLS || userWantsGapless || ((settingPreferBestVideo || wantsQualityAboveProgressiveCap) && PROGRESSIVE_MAX_720P);
+            final boolean crawlHLS = user_wants_HLS || userWantsGapless || ((settingPreferBestVideo || wantsQualityAboveProgressiveCap) && PROGRESSIVE_MAX_720P) || progressiveBroken;
             /*
              * Once we know which HLS "quality" identifier's playlist actually works for one segment, go straight to that one for all other
              * segments of this same video instead of probing all candidates again. Once we know whether HLS offers anything above
@@ -360,7 +361,6 @@ public class OrfAt extends PluginForDecrypt {
              * all -> skip every remaining progressive quality of every remaining segment instead of probing (and potentially offering) more
              * broken links.
              */
-            boolean progressiveBroken = false;
             int videoPosition = 0;
             for (final Map<String, Object> segment : segments) {
                 if (this.isAbort()) {
@@ -406,6 +406,15 @@ public class OrfAt extends PluginForDecrypt {
                  * last/as a last resort.
                  */
                 boolean skipProgressiveForBest_HLS = false;
+                boolean useHls = false;
+                /*
+                 * HLS results that were probed but deliberately skipped because HLS didn't beat progressive and the user didn't ask for it
+                 * (see the !useHls branch below). Kept aside so that, if progressive then turns out broken for this segment, we can still
+                 * offer these instead of leaving the segment empty -> replaces the old "restart the whole pass with progressiveBroken=true"
+                 * loop. Built for every available height (not just heights above progressive's cap), since a broken progressive means HLS
+                 * is now the full source for this segment. Maps each kept-aside result to its (already-known) height.
+                 */
+                final Map<DownloadLink, Integer> hlsResultsIfProgressiveBroken = new LinkedHashMap<DownloadLink, Integer>();
                 find_hls_qualities: if (crawlHLS) {
                     if (geoBlockedForceProgressiveOnly) {
                         /*
@@ -535,9 +544,12 @@ public class OrfAt extends PluginForDecrypt {
                      * progressive's assumed 720p cap) and either BEST or a quality above 720p is wanted. If HLS tops out at the same
                      * quality as progressive here, respect the user's choice and skip it entirely so only progressive gets offered.
                      */
-                    final boolean useHls = user_wants_HLS || !allowProgressive || (foundHeightAboveProgressiveCap && (settingPreferBestVideo || wantsQualityAboveProgressiveCap) && PROGRESSIVE_MAX_720P);
+                    useHls = user_wants_HLS || !allowProgressive || progressiveBroken || (foundHeightAboveProgressiveCap && (settingPreferBestVideo || wantsQualityAboveProgressiveCap) && PROGRESSIVE_MAX_720P);
                     if (!useHls) {
-                        logger.info("HLS doesn't offer more than progressive here and user doesn't want HLS -> Skipping HLS results for this segment");
+                        logger.info("HLS doesn't offer more than progressive here and user doesn't want HLS -> Skipping HLS results for this segment (keeping them aside in case progressive turns out broken)");
+                        for (final int height : availableHeightsThisSegment) {
+                            hlsResultsIfProgressiveBroken.put(createHlsVideoResult(hlsMaster, height, hosterplugin, sourceurl), height);
+                        }
                         break find_hls_qualities;
                     }
                     /*
@@ -545,23 +557,14 @@ public class OrfAt extends PluginForDecrypt {
                      * progressive's cap -> only take the heights progressive can't offer (above 720p). Otherwise (HLS explicitly wanted, or
                      * progressive fully disabled) HLS is a full alternative source -> take every height it offers.
                      */
-                    final boolean hlsCoversEverything = user_wants_HLS || !allowProgressive;
+                    final boolean hlsCoversEverything = user_wants_HLS || !allowProgressive || progressiveBroken;
                     for (final int height : availableHeightsThisSegment) {
                         if (!hlsCoversEverything && height <= 720) {
                             logger.info("Skipping HLS height " + height + "p: already covered by progressive and user doesn't want HLS");
                             continue;
                         }
-                        final DownloadLink video = super.createDownloadlink(hlsMaster);
-                        video.setDefaultPlugin(hosterplugin);
-                        video.setHost(hosterplugin.getHost());
-                        video.setContentUrl(sourceurl);
-                        video.setProperty(ORFMediathek.PROPERTY_CONTENT_TYPE, ORFMediathek.CONTENT_TYPE_VIDEO);
-                        video.setProperty(ORFMediathek.PROPERTY_DIRECTURL, hlsMaster);
                         /* We know the real height here -> no need to guess it from an internal quality identifier later. */
-                        video.setProperty(ORFMediathek.PROPERTY_VIDEO_HEIGHT, height);
-                        video.setProperty(ORFMediathek.PROPERTY_STREAMING_TYPE, "http");
-                        video.setProperty(ORFMediathek.PROPERTY_DELIVERY, "hls");
-                        video.setAvailable(true);
+                        final DownloadLink video = createHlsVideoResult(hlsMaster, height, hosterplugin, sourceurl);
                         videoresults.add(video);
                         segmentAvailableHeights.add(height);
                     }
@@ -739,6 +742,16 @@ public class OrfAt extends PluginForDecrypt {
                         video.setProperty(ORFMediathek.PROPERTY_DELIVERY, delivery);
                         video.setAvailable(true);
                         videoresults.add(video);
+                    }
+                    if (progressiveBroken && videoresults.size() == 0 && !hlsResultsIfProgressiveBroken.isEmpty()) {
+                        /*
+                         * Progressive turned out broken for this segment and HLS was skipped earlier because it didn't beat progressive ->
+                         * fall back to the HLS results we kept aside so this segment still yields something. progressiveBroken is now set,
+                         * so every later segment already takes the HLS path from the start (see crawlHLS/useHls above) and won't need this.
+                         */
+                        logger.info("Progressive broken and HLS was skipped earlier -> Adding the HLS results we kept aside");
+                        videoresults.addAll(hlsResultsIfProgressiveBroken.keySet());
+                        segmentAvailableHeights.addAll(hlsResultsIfProgressiveBroken.values());
                     }
                 }
                 /* Set additional properties */
@@ -1071,6 +1084,25 @@ public class OrfAt extends PluginForDecrypt {
             subtitle.setContentUrl(contentUrl);
         }
         return subtitle;
+    }
+
+    /**
+     * Builds a single HLS video result pointing at the given master playlist for one already-known real height. Uses
+     * super.createDownloadlink (not this.createDownloadlink) on purpose: HLS results must not carry the GET request-type property that the
+     * overridden createDownloadlink sets for progressive/direct HTTP downloads.
+     */
+    private DownloadLink createHlsVideoResult(final String hlsMaster, final int height, final ORFMediathek hosterplugin, final String sourceurl) {
+        final DownloadLink video = super.createDownloadlink(hlsMaster);
+        video.setDefaultPlugin(hosterplugin);
+        video.setHost(hosterplugin.getHost());
+        video.setContentUrl(sourceurl);
+        video.setProperty(ORFMediathek.PROPERTY_CONTENT_TYPE, ORFMediathek.CONTENT_TYPE_VIDEO);
+        video.setProperty(ORFMediathek.PROPERTY_DIRECTURL, hlsMaster);
+        video.setProperty(ORFMediathek.PROPERTY_VIDEO_HEIGHT, height);
+        video.setProperty(ORFMediathek.PROPERTY_STREAMING_TYPE, "http");
+        video.setProperty(ORFMediathek.PROPERTY_DELIVERY, "hls");
+        video.setAvailable(true);
+        return video;
     }
 
     private DownloadLink createThumbnailLink(final String thumbnailUrl, final ORFMediathek hosterplugin) {

@@ -56,7 +56,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 import jd.plugins.components.MultiHosterManagement;
 
-@HostPlugin(revision = "$Revision: 52290 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53273 $", interfaceVersion = 3, names = {}, urls = {})
 public abstract class RapideoCore extends PluginForHost {
     public RapideoCore(PluginWrapper wrapper) {
         super(wrapper);
@@ -160,8 +160,10 @@ public abstract class RapideoCore extends PluginForHost {
             /* nopremium.pl */
             trafficLeftStr = br.getRegex("Pozostały transfer:\\s*<span[^>]*>([^<]+)</span>").getMatch(0);
         }
+        Long trafficLeft = null;
         if (trafficLeftStr != null) {
-            ac.setTrafficLeft(SizeFormatter.getSize(trafficLeftStr));
+            trafficLeft = SizeFormatter.getSize(trafficLeftStr);
+            ac.setTrafficLeft(trafficLeft);
         } else {
             logger.warning("Failed to find trafficleft value");
         }
@@ -213,7 +215,7 @@ public abstract class RapideoCore extends PluginForHost {
         }
         account.setConcurrentUsePossible(true);
         ac.setMultiHostSupport(this, supportedHosts);
-        if ((ac.getTrafficLeft() == 0 || trafficLeftStr == null) && AccountType.FREE.equals(account.getType()) && br.containsHTML("Check your email and")) {
+        if ((trafficLeft == null || trafficLeft.longValue() == 0) && AccountType.FREE.equals(account.getType()) && br.containsHTML("Check your email and")) {
             /* Un-activated free account without traffic -> Not usable at all. */
             throw new AccountUnavailableException("Check your email and click the confirmation link to activate your account", 5 * 60 * 1000l);
         }

@@ -25,6 +25,7 @@ import org.appwork.utils.StringUtils;
 import org.jdownloader.controlling.ffmpeg.json.Stream;
 import org.jdownloader.controlling.ffmpeg.json.StreamInfo;
 import org.jdownloader.downloader.hls.HLSDownloader;
+import org.jdownloader.downloader.hls.HLSPluginBrowser;
 import org.jdownloader.downloader.hls.M3U8Playlist;
 import org.jdownloader.plugins.components.config.GenericM3u8DecrypterConfig;
 import org.jdownloader.plugins.components.hls.HlsContainer;
@@ -44,7 +45,7 @@ import jd.plugins.Plugin;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 52788 $", interfaceVersion = 3, names = { "M3u8" }, urls = { "m3u8s?://.+" })
+@HostPlugin(revision = "$Revision: 53314 $", interfaceVersion = 3, names = { "M3u8" }, urls = { "m3u8s?://.+" })
 public class GenericM3u8 extends PluginForHost {
     public static final String  PRESET_NAME_PROPERTY               = "preSetName";
     private static final String DEPRECATED_NAME_PROPERTY           = "deprecatedName";
@@ -64,6 +65,11 @@ public class GenericM3u8 extends PluginForHost {
 
     public GenericM3u8(PluginWrapper wrapper) {
         super(wrapper);
+    }
+
+    @Override
+    public Browser createNewBrowserInstance() {
+        return new HLSPluginBrowser<GenericM3u8>(this);
     }
 
     @Override

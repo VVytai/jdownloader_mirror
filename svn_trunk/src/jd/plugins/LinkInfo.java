@@ -7,19 +7,20 @@ import java.util.regex.Pattern;
 
 import javax.swing.Icon;
 
-import jd.controlling.linkcrawler.CrawledLink;
-import jd.controlling.packagecontroller.AbstractPackageChildrenNode;
-import jd.parser.Regex;
-
 import org.appwork.utils.Files;
 import org.appwork.utils.StringUtils;
 import org.appwork.utils.os.CrossSystem;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.ExtensionsFilterInterface;
+import org.jdownloader.controlling.filter.CompiledFiletypeFilter.FILETYPE;
 import org.jdownloader.gui.IconKey;
 import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.images.NewTheme;
 import org.jdownloader.logging.LogController;
+
+import jd.controlling.linkcrawler.CrawledLink;
+import jd.controlling.packagecontroller.AbstractPackageChildrenNode;
+import jd.parser.Regex;
 
 public class LinkInfo {
     private final int  partNum;
@@ -161,6 +162,14 @@ public class LinkInfo {
                                 return new ExtensionsFilterInterface[] { this };
                             }
                         }
+
+                        @Override
+                        public FILETYPE getFILETYPE() {
+                            if (hint != null) {
+                                return hint.getFILETYPE();
+                            }
+                            return FILETYPE.UNKNOWN;
+                        }
                     };
                 } else {
                     extension = new ExtensionsFilterInterface() {
@@ -202,6 +211,11 @@ public class LinkInfo {
                         @Override
                         public ExtensionsFilterInterface[] listSameGroup() {
                             return compiled.listSameGroup();
+                        }
+
+                        @Override
+                        public FILETYPE getFILETYPE() {
+                            return compiled.getFILETYPE();
                         }
                     };
                 }
@@ -350,6 +364,17 @@ public class LinkInfo {
                                     return new ExtensionsFilterInterface[] { this };
                                 }
                             }
+
+                            @Override
+                            public FILETYPE getFILETYPE() {
+                                if (compiled != null) {
+                                    return compiled.getFILETYPE();
+                                } else if (hint != null) {
+                                    return hint.getFILETYPE();
+                                } else {
+                                    return FILETYPE.UNKNOWN;
+                                }
+                            }
                         };
                     } else {
                         extension = new ExtensionsFilterInterface() {
@@ -391,6 +416,11 @@ public class LinkInfo {
                             @Override
                             public ExtensionsFilterInterface[] listSameGroup() {
                                 return compiled.listSameGroup();
+                            }
+
+                            @Override
+                            public FILETYPE getFILETYPE() {
+                                return compiled.getFILETYPE();
                             }
                         };
                     }

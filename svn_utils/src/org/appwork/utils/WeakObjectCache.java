@@ -2,6 +2,9 @@ package org.appwork.utils;
 
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.List;
 
 public abstract class WeakObjectCache<T> {
     protected static class Entry<T> extends WeakReference<T> {
@@ -66,12 +69,77 @@ public abstract class WeakObjectCache<T> {
             return null;
         }
         // 3. Nicht gefunden: Neu anlegen
-        final Entry<T> newEntry = new Entry<T>(value, h, this.table[idx], this.queue);
+        final Entry<T> newEntry = newEntry(value, h, this.table[idx]);
         this.table[idx] = newEntry;
         if (++this.size >= this.threshold) {
             this.resize();
         }
         return value;
+    }
+
+    protected Entry<T> newEntry(final T value, final int hash, final Entry<T> next) {
+        return new Entry<T>(value, hash, next, this.queue);
+    }
+
+    public boolean remove(T value) {
+        if (value == null) {
+            return false;
+        }
+        // Vorher aufräumen, um unnötige Suchen in toten Referenzen zu vermeiden
+        expungeStaleEntries();
+        final int h = hash(value);
+        final int idx = (table.length - 1) & h;
+        Entry<T> prev = null;
+        Entry<T> current = table[idx];
+        while (current != null) {
+            T candidate = current.get();
+            // Wenn das Objekt im Knoten ohnehin schon vom GC gelöscht wurde
+            if (candidate == null) {
+                if (prev == null) {
+                    table[idx] = current.next;
+                } else {
+                    prev.next = current.next;
+                }
+                size--;
+            }
+            // Treffer: Objekt existiert noch und entspricht unserem Suchelement
+            else if (current.hash == h && equalsObject(candidate, value)) {
+                if (prev == null) {
+                    table[idx] = current.next;
+                } else {
+                    prev.next = current.next;
+                }
+                size--;
+                return true;
+            } else {
+                prev = current;
+            }
+            current = (prev == null) ? table[idx] : prev.next;
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    public T[] toArray(T[] a) {
+        expungeStaleEntries();
+        // 1. In einer temporären Liste sammeln, da während des Durchlaufs
+        // Objekte vom GC gelöscht werden könnten (Größe ist dynamisch).
+        final List<T> list = new ArrayList<T>(size);
+        for (Entry<T> entry : table) {
+            Entry<T> current = entry;
+            while (current != null) {
+                final T value = current.get();
+                if (value != null) {
+                    list.add(value);
+                }
+                current = current.next;
+            }
+        }
+        // 2. Das Ziel-Array in richtiger Größe bereitstellen/befüllen
+        if (a.length < list.size()) {
+            a = (T[]) Array.newInstance(a.getClass().getComponentType(), list.size());
+        }
+        return list.toArray(a);
     }
 
     public T getOrPut(T value) {
@@ -88,7 +156,7 @@ public abstract class WeakObjectCache<T> {
     }
 
     @SuppressWarnings("unchecked")
-    private void expungeStaleEntries() {
+    protected void expungeStaleEntries() {
         Entry<T> item;
         while ((item = (Entry<T>) this.queue.poll()) != null) {
             int idx = this.table.length - 1 & item.hash;

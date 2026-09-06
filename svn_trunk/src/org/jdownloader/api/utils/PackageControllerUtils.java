@@ -521,7 +521,7 @@ public class PackageControllerUtils<PackageType extends AbstractPackageNode<Chil
             }
         case DELETE_DUPE:
             if (ct instanceof CrawledLink) {
-                return DownloadController.getInstance().hasDownloadLinkByID(((CrawledLink) ct).getLinkID());
+                return DownloadController.getInstance().hasDownloadLinkByID(ct.getLinkID());
             } else {
                 return false;
             }

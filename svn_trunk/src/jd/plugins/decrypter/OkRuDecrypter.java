@@ -41,7 +41,7 @@ import jd.plugins.PluginForDecrypt;
 import jd.plugins.components.PluginJSonUtils;
 import jd.plugins.hoster.OkRu;
 
-@DecrypterPlugin(revision = "$Revision: 52638 $", interfaceVersion = 3, names = { "ok.ru" }, urls = { "https?://(?:[A-Za-z0-9]+\\.)?(?:ok\\.ru|odnoklassniki\\.ru)/(?:video|videoembed|web-api/video/moviePlayer|live)/(\\d+(-\\d+)?)|https?://ok\\.ru/video/c(\\d+)|https://(?:www\\.)?ok\\.ru/profile/\\d+/video/c\\d+" })
+@DecrypterPlugin(revision = "$Revision: 53277 $", interfaceVersion = 3, names = { "ok.ru" }, urls = { "https?://(?:[A-Za-z0-9]+\\.)?(?:ok\\.ru|odnoklassniki\\.ru)/(?:video|videoembed|web-api/video/moviePlayer|live)/(\\d+(-\\d+)?)|https?://ok\\.ru/video/c(\\d+)|https://(?:www\\.)?ok\\.ru/profile/\\d+/video/c\\d+" })
 public class OkRuDecrypter extends PluginForDecrypt {
     public OkRuDecrypter(PluginWrapper wrapper) {
         super(wrapper);
@@ -218,7 +218,7 @@ public class OkRuDecrypter extends PluginForDecrypt {
             main.setAvailable(true);
             String externID = null;
             String provider = null;
-            final Map<String, Object> entries = jd.plugins.hoster.OkRu.getFlashVars(br);
+            final Map<String, Object> entries = jd.plugins.hoster.OkRu.getFlashVars(this, br);
             if (entries != null) {
                 provider = (String) entries.get("provider");
                 externID = (String) JavaScriptEngineFactory.walkJson(entries, "movie/contentId");

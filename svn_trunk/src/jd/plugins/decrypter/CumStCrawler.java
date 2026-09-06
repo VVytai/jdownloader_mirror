@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.appwork.storage.TypeRef;
@@ -54,7 +55,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.CumSt;
 
-@DecrypterPlugin(revision = "$Revision: 53264 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53327 $", interfaceVersion = 3, names = {}, urls = {})
 public class CumStCrawler extends PluginForDecrypt {
     public CumStCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -109,9 +110,9 @@ public class CumStCrawler extends PluginForDecrypt {
     }
 
     /* service = any platform key without slash (e.g. onlyfans, fansly); creator- and post-ids are numeric, dm-ids are uuids. */
-    private static final Pattern PATTERN_POST      = Pattern.compile("/creators/([^/]+)/(\\d+)/post/(\\d+).*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATTERN_DM        = Pattern.compile("/creators/([^/]+)/(\\d+)/dm/([\\w\\-]+).*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-zA-Z0-9\\-:]+).*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_POST      = Pattern.compile("/creators/([^/]+)/([a-zA-Z0-9\\-:_]+)/post/(\\d+).*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_DM        = Pattern.compile("/creators/([^/]+)/([a-zA-Z0-9\\-:_]+)/dm/([\\w\\-]+).*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATTERN_PROFILE   = Pattern.compile("/creators/([^/]+)/([a-zA-Z0-9\\-:_]+).*", Pattern.CASE_INSENSITIVE);
     /* API- and website path segment for the two supported content types. */
     private static final String  CONTENT_TYPE_POST = "post";
     private static final String  CONTENT_TYPE_DM   = "dm";
@@ -357,7 +358,7 @@ public class CumStCrawler extends PluginForDecrypt {
         }
         getPage(br, this.getApiBase() + "/" + service + "/user/" + creatorID + "/" + contentType + "/" + Encoding.urlEncode(contentID));
         final Map<String, Object> content = restoreFromString(br.getRequest().getHtmlCode(), TypeRef.MAP);
-        final HashSet<String> dupes = new HashSet<String>();
+        final Set<String> dupes = new HashSet<String>();
         return crawlProcessContentAPI(content, service, creatorID, creatorName, contentType, dupes, cfg.isEnableProfileCrawlerAdvancedDupeFiltering());
     }
 
@@ -366,7 +367,7 @@ public class CumStCrawler extends PluginForDecrypt {
      *
      * @throws Exception
      */
-    private ArrayList<DownloadLink> crawlProcessContentAPI(final Map<String, Object> postmap, final String service, final String creatorID, final String creatorName, final String contentType, final HashSet<String> dupes, final boolean useAdvancedDupecheck) throws Exception {
+    private ArrayList<DownloadLink> crawlProcessContentAPI(final Map<String, Object> postmap, final String service, final String creatorID, final String creatorName, final String contentType, final Set<String> dupes, final boolean useAdvancedDupecheck) throws Exception {
         final String postID = postmap.get("id").toString();
         final String posturl = "https://" + getHost() + "/creators/" + service + "/" + creatorID + "/" + contentType + "/" + postID;
         /* Every item has a "published" date (unix timestamp in seconds) */
@@ -476,7 +477,7 @@ public class CumStCrawler extends PluginForDecrypt {
         return ret;
     }
 
-    private DownloadLink buildFileDownloadLinkAPI(final HashSet<String> dupes, final boolean advancedDupeCheck, final Map<String, Object> filemap, final int index) throws PluginException {
+    private DownloadLink buildFileDownloadLinkAPI(final Set<String> dupes, final boolean advancedDupeCheck, final Map<String, Object> filemap, final int index) throws PluginException {
         this.ensureInitHosterplugin();
         final Object storageKeyO = filemap.get("storageKey");
         if (storageKeyO == null) {

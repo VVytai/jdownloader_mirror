@@ -172,12 +172,13 @@ public class JDownloaderToolBarAPIImpl implements JDownloaderToolBarAPI {
         int running = DownloadWatchDog.getInstance().getActiveDownloads();
         ret.put("state", DownloadWatchDog.getInstance().getStateMachine().getState().getLabel());
         ret.put("running", running > 0);
-        ret.put("limit", org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED.isEnabled());
-        if (org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED.isEnabled()) {
-            ret.put("limitspeed", org.jdownloader.settings.staticreferences.CFG_GENERAL.DOWNLOAD_SPEED_LIMIT.getValue());
-        } else {
-            ret.put("limitspeed", 0);
-        }
+        /*
+         * effective limit as applied by the download speed manager (pause speed while paused, 0 = no limit), so the API
+         * also reports an active limit while download speed is throttled by pause mode
+         */
+        final int effectiveLimit = DownloadWatchDog.getInstance().getDownloadSpeedManager().getLimit();
+        ret.put("limit", effectiveLimit > 0);
+        ret.put("limitspeed", effectiveLimit);
         ret.put("reconnect", CFG_RECONNECT.AUTO_RECONNECT_ENABLED.isEnabled());
         ret.put("clipboard", org.jdownloader.settings.staticreferences.CFG_GUI.CLIPBOARD_MONITORED.isEnabled());
         ret.put("stopafter", DownloadWatchDog.getInstance().getSession().isStopMarkSet());

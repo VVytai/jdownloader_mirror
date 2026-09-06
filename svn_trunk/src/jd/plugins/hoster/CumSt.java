@@ -43,7 +43,7 @@ import jd.plugins.decrypter.CumStCrawler;
 import jd.plugins.download.DownloadLinkDownloadable;
 import jd.plugins.download.Downloadable;
 
-@HostPlugin(revision = "$Revision: 53176 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53329 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { CumStCrawler.class })
 public class CumSt extends PluginForHost {
     public CumSt(PluginWrapper wrapper) {
@@ -98,7 +98,7 @@ public class CumSt extends PluginForHost {
         return ret.toArray(new String[0]);
     }
 
-    private static final String PROPERTY_LAST_KNOWN_FID = "last_known_fid";
+    private final String PROPERTY_LAST_KNOWN_FID = "last_known_fid";
 
     @Override
     public String getLinkID(final DownloadLink link) {
@@ -193,7 +193,7 @@ public class CumSt extends PluginForHost {
             if (sha256 != null) {
                 link.setSha256Hash(sha256);
             }
-            String betterFilename = link.getStringProperty(PROPERTY_BETTER_FILENAME);
+            final String betterFilename = link.getStringProperty(PROPERTY_BETTER_FILENAME);
             if (betterFilename != null) {
                 link.setFinalFileName(betterFilename);
             }

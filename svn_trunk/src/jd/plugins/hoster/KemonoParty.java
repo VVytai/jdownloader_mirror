@@ -34,6 +34,7 @@ import org.jdownloader.downloader.text.TextDownloader;
 
 import jd.PluginWrapper;
 import jd.http.Browser;
+import jd.http.Request;
 import jd.http.URLConnectionAdapter;
 import jd.parser.Regex;
 import jd.plugins.Account;
@@ -48,7 +49,7 @@ import jd.plugins.decrypter.KemonoPartyCrawler;
 import jd.plugins.download.DownloadLinkDownloadable;
 import jd.plugins.download.Downloadable;
 
-@HostPlugin(revision = "$Revision: 52953 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53277 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { KemonoPartyCrawler.class })
 public class KemonoParty extends PluginForHost {
     public KemonoParty(PluginWrapper wrapper) {
@@ -92,6 +93,19 @@ public class KemonoParty extends PluginForHost {
 
     private static List<String[]> getPluginDomains() {
         return KemonoPartyCrawler.getPluginDomains();
+    }
+
+    @Override
+    public Browser createNewBrowserInstance() {
+        final Browser br = super.createNewBrowserInstance();
+        if ("pawchive.pw".equals(getHost())) {
+            br.getHeaders().put("User-Agent", Request.getSuggestedUserAgent("154.0"));
+            br.getHeaders().put("Sec-Fetch-Dest", "document");
+            br.getHeaders().put("Sec-Fetch-Mode", "navigate");
+            br.getHeaders().put("Sec-Fetch-Site", "same-site");
+        }
+        br.setFollowRedirects(true);
+        return br;
     }
 
     @Override
@@ -218,6 +232,11 @@ public class KemonoParty extends PluginForHost {
                 final String sha256 = getSha256HashFromURL(contenturl);
                 if (sha256 != null) {
                     link.setSha256Hash(sha256);
+                }
+            } else {
+                if ("pawchive.pw".equals(getHost())) {
+                    br.getHeaders().put("Sec-Fetch-Dest", "image");
+                    br.getHeaders().put("Sec-Fetch-Mode", "no-cors");
                 }
             }
             String betterFilename = link.getStringProperty(PROPERTY_BETTER_FILENAME);

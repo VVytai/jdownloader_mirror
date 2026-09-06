@@ -24,13 +24,14 @@ import org.appwork.utils.StringUtils;
 
 import jd.PluginWrapper;
 import jd.http.Browser;
+import jd.plugins.Account;
 import jd.plugins.AccountRequiredException;
 import jd.plugins.DownloadLink;
 import jd.plugins.HostPlugin;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-@HostPlugin(revision = "$Revision: 51859 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53307 $", interfaceVersion = 3, names = {}, urls = {})
 public class WatchMdhTo extends KernelVideoSharingComV2 {
     public WatchMdhTo(final PluginWrapper wrapper) {
         super(wrapper);
@@ -111,7 +112,11 @@ public class WatchMdhTo extends KernelVideoSharingComV2 {
     public static String[] getAnnotationUrls() {
         final List<String> ret = new ArrayList<String>();
         for (final String[] domains : getPluginDomains()) {
-            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/((videos?/)?[^/\\?#]+/?|embed/\\d+/?)");
+            if ("fyxxr.to".equals(domains[0])) {
+                ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/(videos?/[^/\\?#]+/?|embed/\\d+/?)");
+            } else {
+                ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + "/((videos?/)?[^/\\?#]+/?|embed/\\d+/?)");
+            }
         }
         return ret.toArray(new String[0]);
     }
@@ -132,5 +137,11 @@ public class WatchMdhTo extends KernelVideoSharingComV2 {
     @Override
     protected boolean isRequiresWWW() {
         return false;
+    }
+
+    @Override
+    protected int getMaxChunks(final Account account) {
+        /* 2026-09-03: Avoid http error 503 on more than 5 connections, tested with fyxxr.to */
+        return 1;
     }
 }

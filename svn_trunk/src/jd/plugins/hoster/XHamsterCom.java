@@ -78,7 +78,7 @@ import jd.plugins.PluginForHost;
 import jd.plugins.components.PluginJSonUtils;
 import jd.plugins.decrypter.XHamsterGallery;
 
-@HostPlugin(revision = "$Revision: 52939 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53307 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { XHamsterGallery.class })
 public class XHamsterCom extends PluginForHost {
     public XHamsterCom(PluginWrapper wrapper) {
@@ -218,7 +218,7 @@ public class XHamsterCom extends PluginForHost {
     /* video_id that can be used to build URLs */
     private final static String  PROPERTY_VIDEOID                                          = "videoid";
     /* Internal xhamster video_id. Can be used for duplicate matching but cannot necessarily be used in user accessible URLs. */
-    private final static String  PROPERTY_NUMERIC_VIDEO_ID                                 = "numeric_video_id";
+    public final static String   PROPERTY_NUMERIC_VIDEO_ID                                 = "numeric_video_id";
     private final static String  PROPERTY_DEBUG_IS_SET_AS_FAVORITE                         = "debug_is_set_as_favorite";
     private final String         PROPERTY_ACCOUNT_LAST_USED_FREE_DOMAIN                    = "last_used_free_domain";
     private final String         PROPERTY_ACCOUNT_LAST_USED_PREMIUM_DOMAIN                 = "last_used_premium_domain";
@@ -288,10 +288,15 @@ public class XHamsterCom extends PluginForHost {
 
     @Override
     public String getLinkID(final DownloadLink link) {
-        String video_id = link.getStringProperty(PROPERTY_NUMERIC_VIDEO_ID);
-        if (video_id == null) {
-            video_id = getFID(link);
-        }
+        /*
+         * 2026-09-01: Using the internal video_id as linkID was a bad idea since that id is only available for items that went through a
+         * single link-check.
+         */
+        // String video_id = link.getStringProperty(PROPERTY_NUMERIC_VIDEO_ID);
+        // if (video_id == null) {
+        // video_id = getFID(link);
+        // }
+        final String video_id = getFID(link.getPluginPatternMatcher());
         if (video_id != null) {
             return this.getHost() + "://" + video_id;
         } else {
@@ -302,10 +307,6 @@ public class XHamsterCom extends PluginForHost {
     private static String getFID(final DownloadLink link) {
         if (link.getPluginPatternMatcher() == null) {
             return null;
-        }
-        final String videoid = link.getStringProperty(PROPERTY_VIDEOID);
-        if (videoid != null) {
-            return videoid;
         }
         /* Extract id from url */
         return getFID(link.getPluginPatternMatcher());
@@ -342,7 +343,7 @@ public class XHamsterCom extends PluginForHost {
         return id;
     }
 
-    private static String getFID(final String url) {
+    public static String getFID(final String url) {
         if (url == null) {
             return null;
         }
@@ -528,7 +529,8 @@ public class XHamsterCom extends PluginForHost {
         if (!link.isNameSet()) {
             link.setName(getFallbackFileTitle(contenturl) + extDefault);
         }
-        final String fidBefore = getFID(link);
+        final String video_id = getFID(link);
+        String video_id_for_filename = video_id;
         if (account != null) {
             login(account, contenturl, true);
         } else {
@@ -544,11 +546,12 @@ public class XHamsterCom extends PluginForHost {
              */
             /* Check if video_id has changed, eg re-uploaded to different version and old video redirects to new one */
             final String fidAfter = getFID(br.getURL());
-            if (fidAfter != null && !StringUtils.equals(fidBefore, fidAfter)) {
+            if (fidAfter != null && !StringUtils.equals(video_id, fidAfter)) {
                 // video link redirects to another video, eg shorter video, maybe uploaded longer version
-                logger.info("VideoID has changed: Old: " + fidBefore + " | New: " + fidAfter);
+                logger.info("VideoID has changed: Old: " + video_id + " | New: " + fidAfter);
                 // this one updates the property only
                 link.setProperty(PROPERTY_VIDEOID, fidAfter);
+                video_id_for_filename = fidAfter;
             }
         }
         /* Check for self-embed */
@@ -567,6 +570,7 @@ public class XHamsterCom extends PluginForHost {
         }
         String internal_video_id = link.getStringProperty(PROPERTY_NUMERIC_VIDEO_ID);
         if (internal_video_id == null) {
+            /* Search for id in html code */
             internal_video_id = this.find_internal_video_id(br);
             if (internal_video_id != null) {
                 link.setProperty(PROPERTY_NUMERIC_VIDEO_ID, internal_video_id);
@@ -691,7 +695,6 @@ public class XHamsterCom extends PluginForHost {
                     getLogger().log(e);
                 }
             }
-            final String fid = getFID(link);
             String title = getTitle(link, br);
             final String ext;
             if (StringUtils.containsIgnoreCase(dllink, ".m3u8")) {
@@ -704,9 +707,9 @@ public class XHamsterCom extends PluginForHost {
             if (title != null) {
                 // title = Encoding.htmlDecode(Encoding.unicodeDecode(title));
                 if (PluginJsonConfig.get(this.getConfigInterface()).isFilenameId()) {
-                    filename = title + "_" + fid;
+                    filename = title + "_" + video_id_for_filename;
                 } else {
-                    filename = fid + "_" + title;
+                    filename = video_id_for_filename + "_" + title;
                 }
                 filename = Encoding.htmlDecode(filename).trim();
                 filename += ext;
@@ -1549,19 +1552,9 @@ public class XHamsterCom extends PluginForHost {
 
     @SuppressWarnings("deprecation")
     public void handleDownload(final DownloadLink link, final Account account) throws Exception {
-        final String fidBefore = getFID(link);
         requestFileInformation(link, account);
         final String contentURL = getCorrectedURL(link.getPluginPatternMatcher());
         final boolean isPremiumURL = isPremiumURL(contentURL);
-        if (!isPremiumURL && this.canHandle(br.getURL())) {
-            /* Check if video_id has changed, eg re-uploaded to different version and old video redirects to new one */
-            final String fidAfter = getFID(br.getURL());
-            if (fidAfter != null && !StringUtils.equals(fidBefore, fidAfter)) {
-                // video link redirects to another video, eg shorter video, maybe uploaded longer version
-                // this one makes sure all checks (eg mirror, file exists) are done prior to starting the download
-                throw new PluginException(LinkStatus.ERROR_RETRY, "VideoID has changed, retry!");
-            }
-        }
         if (StringUtils.isEmpty(dllink) && !isPremiumURL) {
             // Access the page again to get a new direct link because by checking the availability the first linkisn't valid anymore
             if (isPasswordProtected(br)) {

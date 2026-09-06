@@ -36,7 +36,7 @@ import jd.plugins.PluginDependencies;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53242 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53286 $", interfaceVersion = 3, names = {}, urls = {})
 @PluginDependencies(dependencies = { jd.plugins.decrypter.StileProjectComDecrypter.class })
 public class StileProjectCom extends PluginForHost {
     private String               dllink          = null;
@@ -194,7 +194,7 @@ public class StileProjectCom extends PluginForHost {
         requestFileInformation(link, true);
         if (StringUtils.isEmpty(dllink)) {
             if (br.containsHTML("class=\"sponsor\"") && br.containsHTML(">\\s*VISIT OFFICIAL SITE")) {
-                /* 2026-06-10: e.g. fapbox.com, freeviewmovies.com, nakedtube.com */
+                /* 2026-06-10: e.g. fapbox.com, nakedtube.com */
                 throw new AccountRequiredException("Sponsored content or unavailable video");
             }
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);

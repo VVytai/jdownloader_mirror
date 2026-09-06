@@ -541,8 +541,8 @@ public class LinkGrabberTable extends PackageControllerTable<CrawledPackage, Cra
 
     /**
      * When the table is empty although links are loaded, all of them got hidden by the active filters. In that case a large,
-     * semi-transparent red hint is painted into the background of the (otherwise empty) table so the user understands why nothing
-     * shows up. Search filtering takes precedence over linkgrabber views: only one of the two messages is ever shown.
+     * semi-transparent red hint is painted into the background of the (otherwise empty) table so the user understands why nothing shows up.
+     * Search filtering takes precedence over linkgrabber views: only one of the two messages is ever shown.
      */
     private void paintAllHiddenWarning(final Graphics g) {
         final LinkGrabberTableModel model = (LinkGrabberTableModel) getModel();
@@ -550,14 +550,15 @@ public class LinkGrabberTable extends PackageControllerTable<CrawledPackage, Cra
             // something is visible, nothing to warn about
             return;
         }
-        final int total = LinkCollector.getInstance().getAllChildren().size();
+        final PackageControllerTableModelData<CrawledPackage, CrawledLink> tableData = model.getTableData();
+        final int total = tableData == null ? 0 : tableData.getInvisibleChildren().size();
         if (total <= 0) {
             // linkgrabber is genuinely empty (no links loaded), not a filtering issue
             return;
         }
         final String message;
         if (model.isFilteredView()) {
-            // a non-view filter (i.e. the search field) is active -> search wins over views
+            /* a non-view filter (i.e. the search field) is active -> search wins over views in case both is making all items disappear. */
             message = _GUI.T.LinkGrabberTable_allLinksHiddenBySearch(Integer.toString(total));
         } else if (hasActiveViewFilter(model)) {
             message = _GUI.T.LinkGrabberTable_allLinksHiddenByViews(Integer.toString(total));
@@ -607,7 +608,7 @@ public class LinkGrabberTable extends PackageControllerTable<CrawledPackage, Cra
             List<String> lines;
             FontMetrics fm;
             while (true) {
-                font = orgFont.deriveFont(Font.BOLD, (float) fontSize);
+                font = orgFont.deriveFont(Font.BOLD, fontSize);
                 fm = g2.getFontMetrics(font);
                 lines = wrapText(message, fm, maxWidth);
                 int widest = 0;

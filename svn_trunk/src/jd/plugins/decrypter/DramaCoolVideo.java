@@ -34,7 +34,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.DirectHTTP;
 
-@DecrypterPlugin(revision = "$Revision: 52481 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53308 $", interfaceVersion = 3, names = {}, urls = {})
 public class DramaCoolVideo extends PluginForDecrypt {
     public DramaCoolVideo(PluginWrapper wrapper) {
         super(wrapper);
@@ -138,9 +138,12 @@ public class DramaCoolVideo extends PluginForDecrypt {
                 return ret;
             }
         }
-        String[] links = br.getRegex("data-video=\"([^\"]+)\"\\s*>").getColumn(0);
+        String[] links = br.getRegex("data-src=\"(https?[^\"]+)\"").getColumn(0); // 2026-09-03: dramacool9.com.ro
         if (links == null || links.length == 0) {
             links = br.getRegex("<li>\\s*<a href=\"([^\"]+)\" class=\"img\">\\s*<span class=\"type[^\"]*\">").getColumn(0);
+        }
+        if (links == null || links.length == 0) {
+            links = br.getRegex("data-video=\"([^\"]+)\"\\s*>").getColumn(0);
         }
         if (links != null && links.length > 0) {
             for (String link : links) {
@@ -190,12 +193,15 @@ public class DramaCoolVideo extends PluginForDecrypt {
             }
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
+        final FilePackage fp = FilePackage.getInstance();
         if (title != null) {
-            final FilePackage fp = FilePackage.getInstance();
             fp.setName(Encoding.htmlDecode(title).trim());
-            fp.setAllowMerge(true);
-            fp.addLinks(ret);
+        } else {
+            /* Fallback */
+            fp.setName(br._getURL().getPath());
         }
+        fp.setAllowMerge(true);
+        fp.addLinks(ret);
         return ret;
     }
 }

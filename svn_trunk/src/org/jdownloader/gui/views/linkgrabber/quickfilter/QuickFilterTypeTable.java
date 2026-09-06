@@ -9,14 +9,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.regex.Pattern;
 
-import jd.SecondLevelLaunch;
-import jd.controlling.linkcrawler.CrawledLink;
-
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.ArchiveExtensions;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.AudioExtensions;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.DocumentExtensions;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.ExecutableExtensions;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.ExtensionsFilterInterface;
+import org.jdownloader.controlling.filter.CompiledFiletypeFilter.FILETYPE;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.HashExtensions;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.ImageExtensions;
 import org.jdownloader.controlling.filter.CompiledFiletypeFilter.SubtitleExtensions;
@@ -25,6 +23,9 @@ import org.jdownloader.gui.translate._GUI;
 import org.jdownloader.gui.views.components.Header;
 import org.jdownloader.gui.views.linkgrabber.LinkGrabberTable;
 import org.jdownloader.translate._JDT;
+
+import jd.SecondLevelLaunch;
+import jd.controlling.linkcrawler.CrawledLink;
 
 public class QuickFilterTypeTable extends FilterTable {
     private static final long            serialVersionUID = 2109715691047942399L;
@@ -301,6 +302,11 @@ public class QuickFilterTypeTable extends FilterTable {
                             @Override
                             public ExtensionsFilterInterface getSource() {
                                 return this;
+                            }
+
+                            @Override
+                            public FILETYPE getFILETYPE() {
+                                return FILETYPE.UNKNOWN;
                             }
                         };
                         allFilters.add(filter = new ExtensionFilter(other) {

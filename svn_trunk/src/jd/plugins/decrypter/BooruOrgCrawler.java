@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.appwork.utils.parser.UrlQuery;
+import org.jdownloader.plugins.components.config.BooruOrgConfig;
 
 import jd.PluginWrapper;
 import jd.controlling.ProgressController;
@@ -34,7 +35,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.components.SiteType.SiteTemplate;
 
-@DecrypterPlugin(revision = "$Revision: 51000 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53284 $", interfaceVersion = 3, names = {}, urls = {})
 public class BooruOrgCrawler extends PluginForDecrypt {
     public BooruOrgCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -67,7 +68,7 @@ public class BooruOrgCrawler extends PluginForDecrypt {
     }
 
     public ArrayList<DownloadLink> decryptIt(CryptedLink param, ProgressController progress) throws Exception {
-        ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
+        final ArrayList<DownloadLink> ret = new ArrayList<DownloadLink>();
         final String contenturl = param.getCryptedUrl();
         br.getPage(contenturl);
         if (br.getHttpConnection().getResponseCode() == 404) {
@@ -87,12 +88,6 @@ public class BooruOrgCrawler extends PluginForDecrypt {
         int entries_per_page_current = 0;
         final Set<String> dupes = new HashSet<String>();
         pagination: do {
-            if (page_counter > 1) {
-                this.br.getPage(url_part + "&pid=" + offset);
-                if (this.br.containsHTML("You are viewing an advertisement")) {
-                    this.br.getPage(url_part + "&pid=" + offset);
-                }
-            }
             logger.info("Decrypting: " + this.br.getURL());
             final String[] linkids = br.getRegex("id=\"p(\\d+)\"").getColumn(0);
             if (linkids == null || linkids.length == 0) {
@@ -105,14 +100,14 @@ public class BooruOrgCrawler extends PluginForDecrypt {
                 if (!dupes.add(linkid)) {
                     continue;
                 }
-                final String link = br.getURL("index.php?page=post&s=view&id=" + linkid).toExternalForm();
-                final DownloadLink dl = createDownloadlink(link);
-                dl.setLinkID(linkid);
-                dl.setAvailable(true);
-                dl.setName(linkid + ".jpeg");
-                dl._setFilePackage(fp);
-                ret.add(dl);
-                distribute(dl);
+                final String url = br.getURL("index.php?page=post&s=view&id=" + linkid).toExternalForm();
+                final DownloadLink link = createDownloadlink(url);
+                link.setLinkID(linkid);
+                link.setAvailable(true);
+                link.setName(linkid + ".jpeg");
+                link._setFilePackage(fp);
+                ret.add(link);
+                distribute(link);
                 offset++;
                 numberofNewItemsThisPage++;
             }
@@ -122,9 +117,17 @@ public class BooruOrgCrawler extends PluginForDecrypt {
             } else if (numberofNewItemsThisPage == 0) {
                 logger.info("Stopping because: Failed to find any new items on current page");
                 break pagination;
-            } else {
-                /* Continue to next page */
-                page_counter++;
+            }
+            /* Continue to next page */
+            page_counter++;
+            /* Wait some time between pagination requests to avoid running into the rate limit. */
+            final int waitSeconds = get(this.getConfigInterface()).getPaginationWaitSeconds();
+            if (waitSeconds > 0) {
+                this.sleep(waitSeconds * 1000l, param);
+            }
+            this.br.getPage(url_part + "&pid=" + offset);
+            if (this.br.containsHTML("You are viewing an advertisement")) {
+                this.br.getPage(url_part + "&pid=" + offset);
             }
         } while (entries_per_page_current >= max_entries_per_page);
         if (ret.isEmpty()) {
@@ -134,7 +137,18 @@ public class BooruOrgCrawler extends PluginForDecrypt {
     }
 
     @Override
+    public Class<? extends BooruOrgConfig> getConfigInterface() {
+        return BooruOrgConfig.class;
+    }
+
+    @Override
     public SiteTemplate siteTemplateType() {
         return SiteTemplate.Danbooru;
+    }
+
+    @Override
+    public int getMaxConcurrentProcessingInstances() {
+        /* 2026-09-01: Try to avoid rate limit */
+        return 1;
     }
 }

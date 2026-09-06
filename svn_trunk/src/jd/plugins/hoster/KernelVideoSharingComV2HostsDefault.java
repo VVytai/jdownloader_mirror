@@ -19,8 +19,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.appwork.utils.Exceptions;
+import org.appwork.utils.StringUtils;
 import org.jdownloader.plugins.components.config.KVSConfig;
 import org.jdownloader.plugins.components.config.KVSConfigFullpornxxx;
 
@@ -30,7 +32,7 @@ import jd.plugins.DownloadLink;
 import jd.plugins.HostPlugin;
 import jd.plugins.PluginException;
 
-@HostPlugin(revision = "$Revision: 52974 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53283 $", interfaceVersion = 3, names = {}, urls = {})
 public class KernelVideoSharingComV2HostsDefault extends KernelVideoSharingComV2 {
     public KernelVideoSharingComV2HostsDefault(final PluginWrapper wrapper) {
         super(wrapper);
@@ -165,6 +167,7 @@ public class KernelVideoSharingComV2HostsDefault extends KernelVideoSharingComV2
         ret.add(new String[] { "femdomtb.com" });
         ret.add(new String[] { "wow.xxx" });
         ret.add(new String[] { "neporn.com" });
+        ret.add(new String[] { "ooxxx.com" });
         return ret;
     }
 
@@ -214,6 +217,34 @@ public class KernelVideoSharingComV2HostsDefault extends KernelVideoSharingComV2
             return super.getDllink(link, br);
         } catch (PluginException e) {
             throw Exceptions.addSuppressed(exception, e);
+        }
+    }
+
+    @Override
+    protected int addQualityURL(final Browser br, final DownloadLink link, final Map<Integer, String> qualityMap, final String url) {
+        final int ret = super.addQualityURL(br, link, qualityMap, url);
+        if (ret != -1) {
+            return ret;
+        }
+        /* 2026-09-01: e.g. 3movs.com RE forum thread 98993 */
+        final String video_url = br.getRegex("(video(?:_[a-z0-9]+)?_url)\\s*:\\s*(?:\"|')" + Pattern.quote(url)).getMatch(0);
+        if (video_url == null) {
+            return -1;
+        }
+        final String hd = br.getRegex(video_url + "_hd\\s*:\\s*(?:\"|'|)(\\d+)").getMatch(0);
+        final String text = br.getRegex(video_url + "_text\\s*:\\s*(\"|')(.*?)\\1").getMatch(1);
+        if ("1".equals(hd)) {
+            qualityMap.put(Integer.valueOf(720), url);
+            return 720;
+        } else if (StringUtils.containsIgnoreCase(text, "high")) {
+            qualityMap.put(Integer.valueOf(480), url);
+            return 480;
+        } else if (StringUtils.containsIgnoreCase(text, "low")) {
+            qualityMap.put(Integer.valueOf(360), url);
+            return 360;
+        } else {
+            logger.info("Unknown quality:" + text + " for " + url);
+            return -1;
         }
     }
 

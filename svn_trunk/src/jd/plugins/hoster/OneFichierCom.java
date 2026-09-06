@@ -64,7 +64,6 @@ import org.jdownloader.plugins.components.config.OneFichierConfigInterface.FreeD
 import org.jdownloader.plugins.components.config.OneFichierConfigInterface.FreeDownloadWaitBetweenDownloadsLimitMode;
 import org.jdownloader.plugins.components.config.OneFichierConfigInterface.LinkcheckMode;
 import org.jdownloader.plugins.components.config.OneFichierConfigInterface.SSLMode;
-import org.jdownloader.plugins.config.PluginJsonConfig;
 import org.jdownloader.scripting.JavaScriptEngineFactory;
 import org.jdownloader.settings.GraphicalUserInterfaceSettings.SIZEUNIT;
 import org.jdownloader.settings.staticreferences.CFG_GUI;
@@ -103,7 +102,7 @@ import jd.plugins.download.HashInfo;
 import jd.plugins.download.HashInfo.TYPE;
 import net.miginfocom.swing.MigLayout;
 
-@HostPlugin(revision = "$Revision: 53205 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53290 $", interfaceVersion = 3, names = {}, urls = {})
 public class OneFichierCom extends PluginForHost {
     /* Account properties */
     private final String        PROPERTY_ACCOUNT_USE_CDN_CREDITS                                  = "use_cdn_credits";
@@ -312,7 +311,7 @@ public class OneFichierCom extends PluginForHost {
     }
 
     private boolean preferSingleLinkcheckViaAPI() {
-        final OneFichierConfigInterface cfg = PluginJsonConfig.get(OneFichierConfigInterface.class);
+        final OneFichierConfigInterface cfg = get(getConfigInterface());
         final LinkcheckMode mode = cfg.getLinkcheckMode();
         /**
          * 2025-10-09: Changed default meaning of LinkcheckMode.AUTO to return alse here due to the strict API rate limits of 1fichier. API
@@ -595,7 +594,7 @@ public class OneFichierCom extends PluginForHost {
             link.removeProperty(directurlproperty);
         }
         prepareBrowserWebsite(br);
-        final OneFichierConfigInterface cfg = PluginJsonConfig.get(this.getConfigInterface());
+        final OneFichierConfigInterface cfg = get(this.getConfigInterface());
         final String contentURL = this.getURLWithPreferredProtocol(getContentURLWebsite(link));
         boolean instantRetryOnNoFreeSlots = cfg.isNoFreeSlotsInstantRetryEnabled();
         final int noFreeSlotsInstantRetryHandlingAutoThresholdMinutes = 10;
@@ -696,7 +695,7 @@ public class OneFichierCom extends PluginForHost {
                 /* Reset no free slots instant retry handling cooldown timer before error handling gets called. */
                 timestampLastFreeDownloadNoFreeSlotsHandlingInstantRetryFailed.set(0);
             }
-            dllink = br.getRegex("<a href=\"([^\"]+)\"[^>]*>\\s*Click here to download").getMatch(0);
+            dllink = br.getRegex("<a href=\"([^\"]+)\"[^>]*>\\s*(?:Click here to|Start your) download").getMatch(0);
             if (dllink == null) {
                 dllink = br.getRegex("align:middle\">\\s+<a href=(\"|')(https?://[a-zA-Z0-9_\\-]+\\.(1fichier|desfichiers)\\.com/[a-zA-Z0-9]+.*?)\\1").getMatch(1);
             }
@@ -869,7 +868,14 @@ public class OneFichierCom extends PluginForHost {
      * demand".
      */
     private boolean isErrorNoFreeSlots(final Browser br) {
-        return br.containsHTML(">\\s*Free download is temporarily limited due to high demand");
+        if (br.containsHTML(">\\s*Free download is temporarily limited due to high demand")) {
+            return true;
+        } else if (br.containsHTML(">\\s*all free guest slots are currently in use")) {
+            // <b>High demand:</b> all free guest slots are currently in use.
+            // <br>✅ Free slots are still available for <b>registered users</b> — instant, free access.
+            return true;
+        }
+        return false;
     }
 
     private void errorNoFreeSlots(final Account account) throws PluginException {
@@ -1512,7 +1518,7 @@ public class OneFichierCom extends PluginForHost {
         } else {
             final long knownDownloadSize = link.getKnownDownloadSize();
             if (knownDownloadSize <= 50 * 1024 * 1024) {
-                final int wait = get(OneFichierConfigInterface.class).getSmallFilesWaitIntervalSeconds();
+                final int wait = get(this.getConfigInterface()).getSmallFilesWaitIntervalSeconds();
                 /* Small file or big file but only some bytes remaining -> Avoid IP block because of too many downloads in short time */
                 return Math.max(0, wait * 1000);
             } else {
@@ -1582,7 +1588,7 @@ public class OneFichierCom extends PluginForHost {
         final Map<String, Object> postdata = new HashMap<String, Object>();
         postdata.put("url", this.getContentURL(link));
         postdata.put("pass", passCode);
-        postdata.put("no_ssl", get(OneFichierConfigInterface.class).getSSLMode() == SSLMode.FORCE_HTTP ? 1 : 0);
+        postdata.put("no_ssl", get(this.getConfigInterface()).getSSLMode() == SSLMode.FORCE_HTTP ? 1 : 0);
         performAPIRequest(API_BASE + "/download/get_token.cgi", JSonStorage.serializeToJson(postdata));
         final Map<String, Object> entries = handleErrorsAPI(account);
         /* 2019-04-04: Downloadlink is officially only valid for 5 minutes */

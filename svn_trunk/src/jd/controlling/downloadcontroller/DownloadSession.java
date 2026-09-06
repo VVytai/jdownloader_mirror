@@ -84,8 +84,6 @@ public class DownloadSession extends Property {
     private final WeakHashMap<UniqueAlltimeID, IfFilenameTooLongAction>   fileFilenameTooLongActions = new WeakHashMap<UniqueAlltimeID, IfFilenameTooLongAction>();
     private final AtomicInteger                                           downloadsStarted           = new AtomicInteger(0);
     private final AtomicInteger                                           skipCounter                = new AtomicInteger(0);
-    private final NullsafeAtomicReference<Integer>                        speedLimitBeforePause      = new NullsafeAtomicReference<Integer>(null);
-    private final NullsafeAtomicReference<Boolean>                        speedLimitedBeforePause    = new NullsafeAtomicReference<Boolean>(null);
     private volatile List<DownloadLink>                                   forcedLinks                = new CopyOnWriteArrayList<DownloadLink>();
     private volatile List<DownloadLink>                                   activationRequests         = new CopyOnWriteArrayList<DownloadLink>();
     private final WeakHashMap<PluginForHost, PluginClassLoaderChild>      activationPluginCache      = new WeakHashMap<PluginForHost, PluginClassLoaderChild>();
@@ -219,18 +217,6 @@ public class DownloadSession extends Property {
 
     public int getSkipCounter() {
         return skipCounter.get();
-    }
-
-    public int getSpeedLimitBeforePause() {
-        Integer ret = speedLimitBeforePause.get();
-        if (ret == null) {
-            return -1;
-        }
-        return Math.max(-1, ret);
-    }
-
-    public Boolean isSpeedWasLimitedBeforePauseEnabled() {
-        return speedLimitedBeforePause.get();
     }
 
     protected void setActivationRequests(List<DownloadLink> activationRequests) {
@@ -795,14 +781,6 @@ public class DownloadSession extends Property {
 
     public boolean setCandidatesRefreshRequired(boolean b) {
         return refreshCandidates.getAndSet(b);
-    }
-
-    public void setSpeedLimitBeforePause(int downloadSpeedLimit) {
-        speedLimitBeforePause.set(downloadSpeedLimit);
-    }
-
-    public void setSpeedWasLimitedBeforePauseEnabled(boolean b) {
-        speedLimitedBeforePause.set(b);
     }
 
     public boolean compareAndSetSessionState(SessionState expect, SessionState update) {

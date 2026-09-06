@@ -1206,7 +1206,8 @@ public abstract class PluginForHost extends Plugin {
             }
             if (!mhost.isUnlimitedTraffic()) {
                 /* Traffic limit exists -> Check if enough traffic is left. */
-                final long host_TrafficLeft = Math.max(0, mhost.getTrafficLeft());
+                /* Use the raw (possibly negative/overdrawn) value so the missing amount below includes the overdraft. */
+                final long host_TrafficLeft = mhost.getTrafficLeft();
                 if (trafficNeeded > host_TrafficLeft) {
                     /* Not enough individual file host traffic */
                     if (ai.isTrafficRefill()) {

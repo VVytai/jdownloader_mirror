@@ -90,15 +90,7 @@ public class JDAnywhereEventPublisher implements EventPublisher, AccountControll
 
     GenericConfigEventListener<Integer> downloadSpeedLimitEventListener            = new GenericConfigEventListener<Integer>() {
         public void onConfigValueModified(KeyHandler<Integer> keyHandler, Integer newValue) {
-            org.jdownloader.myjdownloader.client.json.JsonMap data = new org.jdownloader.myjdownloader.client.json.JsonMap();
-            data.put("message", "Limitspeed");
-            data.put("data", CFG_GENERAL.DOWNLOAD_SPEED_LIMIT.getValue());
-            SimpleEventObject eventObject = new SimpleEventObject(JDAnywhereEventPublisher.this, EVENTID.SETTINGSCHANGED.name(), data, "DOWNLOAD_SPEED_LIMIT");
-            for (RemoteAPIEventsSender eventSender : eventSenders) {
-                eventSender.publishEvent(eventObject, null);
-            }
-            // JDAnywhereController.getInstance().getEventsapi().publishEvent(new
-                    // EventObject("SettingsChanged", data), null);
+            publishDownloadSpeedLimitEvent();
         }
 
         public void onConfigValidatorError(KeyHandler<Integer> keyHandler, Integer invalidValue, ValidationException validateException) {
@@ -109,13 +101,7 @@ public class JDAnywhereEventPublisher implements EventPublisher, AccountControll
         }
 
         public void onConfigValueModified(KeyHandler<Boolean> keyHandler, Boolean newValue) {
-            org.jdownloader.myjdownloader.client.json.JsonMap data = new org.jdownloader.myjdownloader.client.json.JsonMap();
-            data.put("message", "LimitspeedActivated");
-            data.put("data", CFG_GENERAL.DOWNLOAD_SPEED_LIMIT_ENABLED.isEnabled());
-            SimpleEventObject eventObject = new SimpleEventObject(JDAnywhereEventPublisher.this, EVENTID.SETTINGSCHANGED.name(), data, "DOWNLOAD_SPEED_LIMIT_ENABLED");
-            for (RemoteAPIEventsSender eventSender : eventSenders) {
-                eventSender.publishEvent(eventObject, null);
-            }
+            publishDownloadSpeedLimitEnabledEvent();
         }
     };
     GenericConfigEventListener<Integer> maxSimultaneDownloadsEventListenr          = new GenericConfigEventListener<Integer>() {
@@ -294,11 +280,45 @@ public class JDAnywhereEventPublisher implements EventPublisher, AccountControll
         }
     }
 
+    /**
+     * Publishes the effective download speed limit as applied by the download speed manager (the pause speed while
+     * paused, 0 = no limit), so external clients also learn about the throttling that is active during pause mode.
+     */
+    private void publishDownloadSpeedLimitEvent() {
+        org.jdownloader.myjdownloader.client.json.JsonMap data = new org.jdownloader.myjdownloader.client.json.JsonMap();
+        data.put("message", "Limitspeed");
+        data.put("data", DownloadWatchDog.getInstance().getDownloadSpeedManager().getLimit());
+        SimpleEventObject eventObject = new SimpleEventObject(this, EVENTID.SETTINGSCHANGED.name(), data, "DOWNLOAD_SPEED_LIMIT");
+        for (RemoteAPIEventsSender eventSender : eventSenders) {
+            eventSender.publishEvent(eventObject, null);
+        }
+    }
+
+    /**
+     * Publishes whether a download speed limit is currently in effect (also true while paused), based on the effective
+     * limit of the download speed manager.
+     */
+    private void publishDownloadSpeedLimitEnabledEvent() {
+        org.jdownloader.myjdownloader.client.json.JsonMap data = new org.jdownloader.myjdownloader.client.json.JsonMap();
+        data.put("message", "LimitspeedActivated");
+        data.put("data", DownloadWatchDog.getInstance().getDownloadSpeedManager().getLimit() > 0);
+        SimpleEventObject eventObject = new SimpleEventObject(this, EVENTID.SETTINGSCHANGED.name(), data, "DOWNLOAD_SPEED_LIMIT_ENABLED");
+        for (RemoteAPIEventsSender eventSender : eventSenders) {
+            eventSender.publishEvent(eventObject, null);
+        }
+    }
+
     public void onStateChange(StateEvent event) {
         org.jdownloader.myjdownloader.client.json.JsonMap data = new org.jdownloader.myjdownloader.client.json.JsonMap();
         data.put("message", "Running State Changed");
         data.put("data", event.getNewState().getLabel());
         publishEvent(EVENTID.RUNNINGSTATE, data, "RUNNINGSTATE");
+        /*
+         * Pause toggles the effective speed limit without changing the persistent config, so the config listeners do not
+         * fire. Push the current effective values on every state change so clients learn about pause throttling.
+         */
+        publishDownloadSpeedLimitEvent();
+        publishDownloadSpeedLimitEnabledEvent();
     }
 
     public void onStateUpdate(StateEvent event) {

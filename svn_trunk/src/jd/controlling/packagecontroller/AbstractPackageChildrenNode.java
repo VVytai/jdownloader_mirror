@@ -14,4 +14,12 @@ public interface AbstractPackageChildrenNode<E> extends AbstractNode {
     public DomainInfo getDomainInfo();
 
     public boolean hasVariantSupport();
+
+    /**
+     * Returns a stable identifier that is used to detect duplicates. Two nodes with the same linkID are considered the same file, even if
+     * their URLs differ (e.g. different mirrors, or the same source processed into different variants).
+     *
+     * @return the duplicate-detection ID of this node
+     */
+    public String getLinkID();
 }

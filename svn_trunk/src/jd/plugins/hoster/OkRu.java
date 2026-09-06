@@ -49,10 +49,11 @@ import jd.plugins.DownloadLink;
 import jd.plugins.DownloadLink.AvailableStatus;
 import jd.plugins.HostPlugin;
 import jd.plugins.LinkStatus;
+import jd.plugins.Plugin;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
 
-@HostPlugin(revision = "$Revision: 53122 $", interfaceVersion = 3, names = {}, urls = {})
+@HostPlugin(revision = "$Revision: 53277 $", interfaceVersion = 3, names = {}, urls = {})
 public class OkRu extends PluginForHost {
     public OkRu(PluginWrapper wrapper) {
         super(wrapper);
@@ -123,7 +124,7 @@ public class OkRu extends PluginForHost {
         br.setFollowRedirects(true);
     }
 
-    public static Map<String, Object> getFlashVars(final Browser br) {
+    public static Map<String, Object> getFlashVars(Plugin plugin, final Browser br) {
         String playerJsonSrc = br.getRegex("data-module=\"OKVideo\"[^>]*data-options=\"([^<>]+)\"[^>]*data-player-container-id=").getMatch(0);
         if (playerJsonSrc == null) {
             return null;
@@ -132,19 +133,25 @@ public class OkRu extends PluginForHost {
             playerJsonSrc = playerJsonSrc.replace("&quot;", "\"");
             Map<String, Object> entries = JavaScriptEngineFactory.jsonToJavaMap(playerJsonSrc);
             entries = (Map<String, Object>) entries.get("flashvars");
-            String metadataUrl = (String) entries.get("metadataUrl");
-            String metadataSrc = (String) entries.get("metadata");
-            if (StringUtils.isEmpty(metadataSrc) && metadataUrl != null) {
-                metadataUrl = Encoding.htmlDecode(metadataUrl);
-                br.postPage(metadataUrl, "st.location=AutoplayLayerMovieRBlock%2FanonymVideo%2Fanonym");
-                metadataSrc = br.getRequest().getHtmlCode();
+            Object metadataUrl = entries.get("metadataUrl");
+            Object metadata = entries.get("metadata");
+            if ((metadata == null || (metadata instanceof String && StringUtils.isEmpty((String) metadata))) && metadataUrl instanceof String) {
+                metadataUrl = Encoding.htmlDecode(metadataUrl.toString());
+                br.postPage(metadataUrl.toString(), "st.location=AutoplayLayerMovieRBlock%2FanonymVideo%2Fanonym");
+                metadata = br.getRequest().getHtmlCode();
             }
-            // final List<Object> ressourcelist = (List<Object>) entries.get("");
-            entries = JavaScriptEngineFactory.jsonToJavaMap(metadataSrc);
-            return entries;
+            if (metadata instanceof Map) {
+                return (Map<String, Object>) metadata;
+            } else if (metadata instanceof String) {
+                entries = JavaScriptEngineFactory.jsonToJavaMap(metadata.toString());
+                return entries;
+            } else {
+                throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+            }
         } catch (final Throwable e) {
-            return null;
+            plugin.getLogger().log(e);
         }
+        return null;
     }
 
     @Override
@@ -170,7 +177,7 @@ public class OkRu extends PluginForHost {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
         String title = null;
-        final Map<String, Object> entries = getFlashVars(this.br);
+        final Map<String, Object> entries = getFlashVars(this, this.br);
         if (entries == null) {
             logger.warning("Failed to obtain file information");
             return AvailableStatus.TRUE;
@@ -295,16 +302,20 @@ public class OkRu extends PluginForHost {
         if (!isDownload && !StringUtils.isEmpty(dllink) && !StringUtils.containsIgnoreCase(dllink, ".m3u8") && !link.isSizeSet()) {
             URLConnectionAdapter con = null;
             try {
-                con = br.openHeadConnection(dllink);
-                handleConnectionErrors(br, con);
+                final Browser br2 = br.cloneBrowser();
+                con = br2.openHeadConnection(dllink);
+                handleConnectionErrors(br2, con);
                 if (con.isContentDecoded()) {
                     link.setDownloadSize(con.getCompleteContentLength());
                 } else {
                     link.setVerifiedFileSize(con.getCompleteContentLength());
                 }
+                br2.followConnection();
             } finally {
                 try {
-                    con.disconnect();
+                    if (con != null) {
+                        con.disconnect();
+                    }
                 } catch (final Throwable e) {
                 }
             }

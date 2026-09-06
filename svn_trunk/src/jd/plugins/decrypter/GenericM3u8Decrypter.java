@@ -26,6 +26,7 @@ import org.appwork.utils.StringUtils;
 import org.appwork.utils.encoding.URLEncode;
 import org.appwork.utils.formatter.HexFormatter;
 import org.appwork.utils.net.URLHelper;
+import org.jdownloader.downloader.hls.HLSPluginBrowser;
 import org.jdownloader.downloader.hls.M3U8Playlist;
 import org.jdownloader.plugins.components.config.GenericM3u8DecrypterConfig;
 import org.jdownloader.plugins.components.config.GenericM3u8DecrypterConfig.CrawlSpeedMode;
@@ -54,7 +55,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.GenericM3u8;
 
-@DecrypterPlugin(revision = "$Revision: 51939 $", interfaceVersion = 3, names = { "m3u8" }, urls = { "(https?://.+\\.m3u8|m3u8://https?://.*)($|(?:\\?|%3F)[^\\s<>\"']*|#.*)" })
+@DecrypterPlugin(revision = "$Revision: 53314 $", interfaceVersion = 3, names = { "m3u8" }, urls = { "(https?://.+\\.m3u8|m3u8://https?://.*)($|(?:\\?|%3F)[^\\s<>\"']*|#.*)" })
 public class GenericM3u8Decrypter extends PluginForDecrypt {
     @Override
     public Boolean siteTesterDisabled() {
@@ -68,6 +69,11 @@ public class GenericM3u8Decrypter extends PluginForDecrypt {
     @Override
     public FEATURE[] getFeatures() {
         return new FEATURE[] { FEATURE.GENERIC };
+    }
+
+    @Override
+    public Browser createNewBrowserInstance() {
+        return new HLSPluginBrowser<GenericM3u8Decrypter>(this);
     }
 
     @Override

@@ -117,6 +117,10 @@ public class AccountStorable extends AbstractJsonData {
         if (trafficLeft == null) {
             this.trafficLeft = null;
         } else {
+            // NOTE: AccountInfo.getTrafficLeft() can now be negative (an overdrawn account), and in principle we would want to
+            // transport that real negative value here. For now we still floor the value at -1 and do NOT expose values below -1
+            // via the API, because it is unclear what impact arbitrary negative traffic values would have on external API clients
+            // and on our own MyJDownloader web interface. Also note that -1 is used elsewhere as the "unlimited traffic" marker.
             this.trafficLeft = Math.max(-1, trafficLeft);
         }
     }

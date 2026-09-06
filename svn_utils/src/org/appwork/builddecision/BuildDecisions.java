@@ -40,6 +40,7 @@ import java.lang.management.RuntimeMXBean;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -92,7 +93,7 @@ public class BuildDecisions {
     private BuildDecisions() {
     }
 
-    private final static Map<String, BuildDecisionInfo> INSTANCE = new HashMap<String, BuildDecisionInfo>();
+    private final static Map<String, BuildDecisionInfo> INSTANCE = Collections.synchronizedMap(new HashMap<String, BuildDecisionInfo>());
 
     public static boolean add(final String tag, final Class<?>... loadedImports) {
         return INSTANCE.put(tag, new BuildDecisionInfo(loadedImports)) == null;
@@ -256,52 +257,56 @@ public class BuildDecisions {
      * @param defaultLogger
      */
     public static void status(LogInterface logger) {
+        if (logger == null) {
+            return;
+        }
+        if (!isEnabled()) {
+            return;
+        }
         try {
-            if (logger == null) {
-                return;
-            }
-            if (!isEnabled()) {
-                return;
-            }
-            RuntimeMXBean bean = ManagementFactory.getRuntimeMXBean();
-            if (bean != null) {
-                String cp = bean.getClassPath();
-                if (cp != null) {
-                    for (String s : cp.split(File.pathSeparator)) {
-                        logger.info("ClassPath: " + s.replaceAll("^.*?[/\\\\]libs[/\\\\]", "libs/"));
-                        if (s.endsWith(".jar")) {
-                            JarFile jf = null;
-                            try {
-                                jf = new JarFile(s);
-                                Manifest manifest = jf.getManifest();
-                                if (manifest != null) {
-                                    // Read the attributes
-                                    Attributes attributes = manifest.getMainAttributes();
-                                    for (Object key : attributes.keySet()) {
-                                        logger.info(StringUtils.fillPost("", " ", "ClassPath: ".length()) + key + ": " + attributes.getValue(String.valueOf(key)));
-                                    }
-                                } else {
-                                    logger.info(StringUtils.fillPost("", " ", s.length()) + "- no Manifest");
-                                }
-                            } finally {
-                                if (jf != null) {
-                                    jf.close();
-                                }
+            final RuntimeMXBean bean = ManagementFactory.getRuntimeMXBean();
+            bean: if (bean != null) {
+                final String cp = bean.getClassPath();
+                if (cp == null) {
+                    break bean;
+                }
+                for (String s : cp.split(File.pathSeparator)) {
+                    logger.info("ClassPath: " + s.replaceAll("^.*?[/\\\\]libs[/\\\\]", "libs/"));
+                    if (!s.endsWith(".jar") || !new File(s).isFile()) {
+                        continue;
+                    }
+                    JarFile jf = null;
+                    try {
+                        jf = new JarFile(s);
+                        final Manifest manifest = jf.getManifest();
+                        if (manifest != null) {
+                            // Read the attributes
+                            final Attributes attributes = manifest.getMainAttributes();
+                            for (Object key : attributes.keySet()) {
+                                logger.info(StringUtils.fillPost("", " ", "ClassPath: ".length()) + key + ": " + attributes.getValue(String.valueOf(key)));
                             }
+                        } else {
+                            logger.info(StringUtils.fillPost("", " ", s.length()) + "- no Manifest");
+                        }
+                    } catch (final Throwable ignore) {
+                        logger.log(ignore);
+                    } finally {
+                        if (jf != null) {
+                            jf.close();
                         }
                     }
                 }
             }
             for (Entry<String, BuildDecisionInfo> es : INSTANCE.entrySet()) {
                 String str = "Build Decision: " + es.getKey();
-                Class<?>[] imports = es.getValue().getLoadedImports();
+                final Class<?>[] imports = es.getValue().getLoadedImports();
                 if (imports == null || imports.length == 0) {
                     str += "\r\n-no-classes-";
                 } else {
                     // is this really 1.6? check!
                     for (Class<?> cls : imports) {
                         final String version = cls.getPackage().getImplementationVersion();
-                        URL url = cls.getClassLoader().getResource(cls.getName().replace(".", "/") + ".class");
+                        final URL url = cls.getClassLoader().getResource(cls.getName().replace(".", "/") + ".class");
                         // No Logger init here!
                         str += ("\r\nLoaded library: " + cls.getPackage().getImplementationTitle() + "/" + cls.getPackage().getImplementationVendor() + "\r\nClass: " + cls + "\r\nVersion: " + version + "\r\nLoaded from: " + url);
                     }
@@ -313,9 +318,7 @@ public class BuildDecisions {
                 DebugMode.debugger();
                 Thread.currentThread().interrupt();
             }
-            if (logger != null) {
-                logger.log(e);
-            }
+            logger.log(e);
         }
     }
 

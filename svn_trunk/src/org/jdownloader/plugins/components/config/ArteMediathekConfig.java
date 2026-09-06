@@ -34,6 +34,7 @@ public interface ArteMediathekConfig extends PluginConfigInterface {
     final String                                        text_CrawlLanguageItalian                           = "Crawl language italian?";
     final String                                        text_CrawlLanguagePolish                            = "Crawl language polish?";
     final String                                        text_CrawlLanguageSpanish                           = "Crawl language spanish?";
+    final String                                        text_CrawlLanguageRomanian                          = "Crawl language omanian?";
     final String                                        text_CrawlLanguageUnknown                           = "Crawl unknown languages?";
     final String                                        text_QualitySelectionFallbackMode                   = "Define what to add if based on your selection no video results are found";
     final String                                        text_GetFilenameSchemeTypeV2                        = "Select filename scheme type";
@@ -121,6 +122,10 @@ public interface ArteMediathekConfig extends PluginConfigInterface {
 
         public String getCrawlLanguageSpanish_label() {
             return text_CrawlLanguageSpanish;
+        }
+
+        public String getCrawlLanguageRomanian_label() {
+            return text_CrawlLanguageRomanian;
         }
 
         public String getCrawlLanguageUnknown_label() {
@@ -358,6 +363,14 @@ public interface ArteMediathekConfig extends PluginConfigInterface {
     boolean isCrawlLanguageSpanish();
 
     void setCrawlLanguageSpanish(boolean b);
+
+    @AboutConfig
+    @DefaultBooleanValue(true)
+    @DescriptionForConfigEntry(text_CrawlLanguageRomanian)
+    @Order(305)
+    boolean isCrawlLanguageRomanian();
+
+    void setCrawlLanguageRomanian(boolean b);
 
     @AboutConfig
     @DefaultBooleanValue(true)

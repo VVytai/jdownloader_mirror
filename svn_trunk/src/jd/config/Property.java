@@ -18,12 +18,10 @@ package jd.config;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.ref.WeakReference;
 import java.nio.charset.Charset;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.WeakHashMap;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -33,6 +31,7 @@ import org.appwork.storage.SimpleMapper;
 import org.appwork.storage.TypeRef;
 import org.appwork.storage.simplejson.MinimalMemoryMap;
 import org.appwork.utils.ReflectionUtils;
+import org.appwork.utils.WeakObjectCache;
 import org.appwork.utils.net.Base64InputStream;
 import org.appwork.utils.net.Base64OutputStream;
 import org.appwork.utils.net.CharSequenceInputStream;
@@ -45,22 +44,24 @@ import org.appwork.utils.net.CharSequenceInputStream;
  *
  */
 public class Property {
-    private final static WeakHashMap<String, WeakReference<String>> DEDUPEMAP = new WeakHashMap<String, WeakReference<String>>();
-    // private final static WeakStringCache DEDUPECACHE = new WeakStringCache();
+    private final static WeakObjectCache<String> DEDUPEMAP = new WeakObjectCache<String>(512) {
+        @Override
+        protected boolean equalsObject(String a, String b) {
+            return a.equals(b);
+        }
+
+        @Override
+        protected int hashCodeObject(String a) {
+            return a.hashCode();
+        }
+    };
 
     public static String dedupeString(String string) {
         if (string == null) {
             return null;
         }
         synchronized (DEDUPEMAP) {
-            String ret = null;
-            WeakReference<String> ref = DEDUPEMAP.get(string);
-            if (ref != null && (ret = ref.get()) != null) {
-                return ret;
-            }
-            ref = new WeakReference<String>(string);
-            DEDUPEMAP.put(string, ref);
-            return string;
+            return DEDUPEMAP.getOrPut(string);
         }
     }
 
@@ -69,12 +70,7 @@ public class Property {
             return null;
         }
         synchronized (DEDUPEMAP) {
-            final WeakReference<String> ref = DEDUPEMAP.get(string);
-            final String ret;
-            if (ref != null && (ret = ref.get()) != null) {
-                return ret;
-            }
-            return null;
+            return DEDUPEMAP.get(string);
         }
     }
 

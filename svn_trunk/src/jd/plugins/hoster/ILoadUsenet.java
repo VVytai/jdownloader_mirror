@@ -22,7 +22,7 @@ import jd.plugins.HostPlugin;
 import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 
-@HostPlugin(revision = "$Revision: 51944 $", interfaceVersion = 3, names = { "iload-usenet.com" }, urls = { "" })
+@HostPlugin(revision = "$Revision: 53273 $", interfaceVersion = 3, names = { "iload-usenet.com" }, urls = { "" })
 public class ILoadUsenet extends UseNet {
     public ILoadUsenet(PluginWrapper wrapper) {
         super(wrapper);
@@ -104,7 +104,7 @@ public class ILoadUsenet extends UseNet {
             final long consumed = SizeFormatter.getSize(consumedTraffic);
             ai.setTrafficMax(max);
             ai.setTrafficLeft(Math.max(0, max - consumed));
-            if (ai.getTrafficLeft() < 0) {
+            if (ai.getTrafficLeft() <= 0) {
                 throw new PluginException(LinkStatus.ERROR_PREMIUM, "No more trial traffic left", PluginException.VALUE_ID_PREMIUM_DISABLE);
             }
             if (regTimeStamp > 0) {

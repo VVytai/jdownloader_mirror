@@ -16,55 +16,110 @@
 package jd.plugins.hoster;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import org.appwork.utils.formatter.SizeFormatter;
 
 import jd.PluginWrapper;
 import jd.http.Browser;
+import jd.http.Request;
 import jd.http.URLConnectionAdapter;
 import jd.nutils.encoding.Encoding;
+import jd.parser.Regex;
 import jd.plugins.DownloadLink;
 import jd.plugins.DownloadLink.AvailableStatus;
 import jd.plugins.HostPlugin;
 import jd.plugins.LinkStatus;
+import jd.plugins.PluginDependencies;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForHost;
+import jd.plugins.decrypter.JumpshareComCrawler;
 
-import org.appwork.utils.formatter.SizeFormatter;
-
-@HostPlugin(revision = "$Revision: 47482 $", interfaceVersion = 3, names = { "jumpshare.com" }, urls = { "https?://(?:www\\.)?jumpshare\\.com/v/[A-Za-z0-9]+" })
+@HostPlugin(revision = "$Revision: 53333 $", interfaceVersion = 3, names = {}, urls = {})
+@PluginDependencies(dependencies = { JumpshareComCrawler.class })
 public class JumpshareCom extends PluginForHost {
     public JumpshareCom(PluginWrapper wrapper) {
         super(wrapper);
     }
 
+    public static List<String[]> getPluginDomains() {
+        return JumpshareComCrawler.getPluginDomains();
+    }
+
+    public static String[] getAnnotationNames() {
+        return buildAnnotationNames(getPluginDomains());
+    }
+
+    @Override
+    public String[] siteSupportedNames() {
+        return buildSupportedNames(getPluginDomains());
+    }
+
+    public static String[] getAnnotationUrls() {
+        return buildAnnotationUrls(getPluginDomains());
+    }
+
+    private static final Pattern PATTERN_FILE = Pattern.compile("/(?:share|v)/([A-Za-z0-9]+)(\\?b=.+)?");
+
+    public static String[] buildAnnotationUrls(final List<String[]> pluginDomains) {
+        final List<String> ret = new ArrayList<String>();
+        for (final String[] domains : pluginDomains) {
+            ret.add("https?://(?:www\\.)?" + buildHostsPatternPart(domains) + PATTERN_FILE.pattern());
+        }
+        return ret.toArray(new String[0]);
+    }
+
+    private String getFID(final DownloadLink link) {
+        return new Regex(link.getPluginPatternMatcher(), PATTERN_FILE).getMatch(0);
+    }
+
+    @Override
+    public String getLinkID(final DownloadLink link) {
+        final String fid = getFID(link);
+        if (fid != null) {
+            return getHost() + "://" + fid;
+        }
+        return super.getLinkID(link);
+    }
+
     @Override
     public String getAGBLink() {
-        return "https://jumpshare.com/terms";
+        return "https://" + getHost() + "/terms";
     }
 
     /* Connection stuff */
-    private final boolean FREE_RESUME       = true;
-    private final int     FREE_MAXCHUNKS    = 0;
-    private final int     FREE_MAXDOWNLOADS = 20;
+    private final boolean FREE_RESUME    = true;
+    private final int     FREE_MAXCHUNKS = 0;
 
     @Override
     public AvailableStatus requestFileInformation(final DownloadLink link) throws IOException, PluginException {
         this.setBrowserExclusive();
         br.setFollowRedirects(true);
-        br.getHeaders().put("User-Agent", "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:99.0) Gecko/20100101 Firefox/99.0");
+        br.getHeaders().put("User-Agent", Request.getSuggestedUserAgent("99.0"));
         br.getPage(link.getPluginPatternMatcher());
-        if (br.getHttpConnection().getResponseCode() == 404 || br.containsHTML("(?i)>\\s*File Not Found\\s*</h1>")) {
+        if (br.getHttpConnection().getResponseCode() == 404 || br.containsHTML(">\\s*File Not Found\\s*</h1>")) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         }
-        String filename = br.getRegex("data\\-gridname=\"([^<>\"]+)\"").getMatch(0);
-        String filesize = br.getRegex("data\\-item\\-size=\"(\\d+)\"").getMatch(0);
-        if (filesize == null) {
-            filesize = br.getRegex("data\\-item\\-size=\"\">\\s*(.*?)\\s*</").getMatch(0);
+        final String fid = this.getFID(link);
+        final String fid_quoted = Pattern.quote(fid);
+        /*
+         * Important: In folder-context, a single file html webpage can contain info about multiple files of a folder so we need to regex
+         * the info for that exact file-id we have!
+         */
+        final String filename = br.getRegex("<li[^>]*data-id=\"" + fid_quoted + "\"[^>]*data-gridname=\"([^\"]+)\"").getMatch(0);
+        if (filename != null) {
+            link.setName(Encoding.htmlDecode(filename.trim()));
+        } else {
+            logger.warning("Failed to find filename");
         }
-        if (filename == null || filesize == null) {
-            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
+        final String filesize = br.getRegex("<li[^>]*data-id=\"" + fid_quoted + "\"[^>]*data-size=\"(\\d+)\"").getMatch(0);
+        if (filesize != null) {
+            link.setDownloadSize(SizeFormatter.getSize(filesize));
+        } else {
+            logger.warning("Failed to find filesize");
         }
-        link.setName(Encoding.htmlDecode(filename.trim()));
-        link.setDownloadSize(SizeFormatter.getSize(filesize));
         return AvailableStatus.TRUE;
     }
 
@@ -77,7 +132,7 @@ public class JumpshareCom extends PluginForHost {
     private void doFree(final DownloadLink link, final boolean resumable, final int maxchunks, final String directlinkproperty) throws Exception, PluginException {
         String dllink = checkDirectLink(link, directlinkproperty);
         if (dllink == null) {
-            dllink = br.getRegex("\"(https?://[^/]+\\.jumpshare\\.com/download/[^<>\"]+)\"").getMatch(0);
+            dllink = br.getRegex("\"(https?://[^/]+\\.jumpshare\\.com/download/[^\"]+)\"").getMatch(0);
             if (dllink == null) {
                 throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
             }
@@ -98,7 +153,7 @@ public class JumpshareCom extends PluginForHost {
     }
 
     private String checkDirectLink(final DownloadLink link, final String property) {
-        String dllink = link.getStringProperty(property);
+        final String dllink = link.getStringProperty(property);
         if (dllink != null) {
             URLConnectionAdapter con = null;
             try {
@@ -127,14 +182,6 @@ public class JumpshareCom extends PluginForHost {
 
     @Override
     public int getMaxSimultanFreeDownloadNum() {
-        return FREE_MAXDOWNLOADS;
-    }
-
-    @Override
-    public void reset() {
-    }
-
-    @Override
-    public void resetDownloadlink(DownloadLink link) {
+        return Integer.MAX_VALUE;
     }
 }

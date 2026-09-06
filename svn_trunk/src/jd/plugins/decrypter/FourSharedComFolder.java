@@ -20,6 +20,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
+import org.appwork.utils.StringUtils;
+import org.appwork.utils.encoding.URLEncode;
+import org.appwork.utils.formatter.SizeFormatter;
+import org.jdownloader.scripting.JavaScriptEngineFactory;
+
 import jd.PluginWrapper;
 import jd.config.Property;
 import jd.controlling.ProgressController;
@@ -39,12 +44,7 @@ import jd.plugins.LinkStatus;
 import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 
-import org.appwork.utils.StringUtils;
-import org.appwork.utils.encoding.URLEncode;
-import org.appwork.utils.formatter.SizeFormatter;
-import org.jdownloader.scripting.JavaScriptEngineFactory;
-
-@DecrypterPlugin(revision = "$Revision: 52482 $", interfaceVersion = 3, names = { "4shared.com" }, urls = { "https?://(?:www\\.)?(?:4shared(?:-china)?\\.com|4s\\.io)/(?:dir|folder|minifolder)/[A-Za-z0-9\\-_]+/(?:\\d+/)?[A-Za-z0-9\\-_]+" })
+@DecrypterPlugin(revision = "$Revision: 53277 $", interfaceVersion = 3, names = { "4shared.com" }, urls = { "https?://(?:www\\.)?(?:4shared(?:-china)?\\.com|4s\\.io)/(?:dir|folder|minifolder)/[A-Za-z0-9\\-_]+/(?:\\d+/)?[A-Za-z0-9\\-_]+" })
 public class FourSharedComFolder extends PluginForDecrypt {
     public FourSharedComFolder(final PluginWrapper wrapper) {
         super(wrapper);
@@ -66,7 +66,7 @@ public class FourSharedComFolder extends PluginForDecrypt {
      */
     @Override
     public ArrayList<DownloadLink> decryptIt(final CryptedLink param, final ProgressController progress) throws Exception {
-        parameter = param.toString();
+        parameter = param.toString().replaceFirst("(?i)^http://", "https://");// avoid http to https redirect
         if (param.toString().matches(type_folder_with_pagenumber)) {
             /* Remove pagenumber from added URL - important! */
             final String pagenumber = new Regex(parameter, "\\.com/[^/]+/[A-Za-z0-9\\-_]+/(\\d+/)[A-Za-z0-9\\-_]+").getMatch(0);
@@ -254,17 +254,17 @@ public class FourSharedComFolder extends PluginForDecrypt {
         br2.getHeaders().put("Accept", "text/html, */*; q=0.01");
         br2.getHeaders().put("X-Requested-With", "XMLHttpRequest");
         String currentDirID = null;
-        if (this.parameter.matches(".+/(folder|minifolder)/\\d+.*")) {
-            /* Old type without the new required ID --> Change to new type, access URL and find ID in html code */
-            br.getPage(parameter.replaceAll("/(folder|minifolder)/", "/dir/"));
-        } else if (this.parameter.matches(".+/(folder|minifolder)/.*")) {
-            currentDirID = new Regex(parameter, "/(?:folder|minifolder)/([^/]+)").getMatch(0);
-        }
-        if (currentDirID == null) {
-            currentDirID = br.getRegex("var currentDirId\\s*=\\s*'([^<>\"']+)';").getMatch(0);
+        if (this.parameter.matches(".+/(folder|minifolder|dir)/.*")) {
+            currentDirID = new Regex(parameter, "/(?:folder|minifolder|dir)/([^/]+)").getMatch(0);
         }
         if (StringUtils.isEmpty(currentDirID)) {
-            return;
+            currentDirID = br.getRegex("class\\s*=\\s*\"jsItemDirId\" value=\"(.*?)\"").getMatch(0);
+            if (StringUtils.isEmpty(currentDirID)) {
+                currentDirID = br.getRegex("var currentDirId\\s*=\\s*'([^<>\"']+)';").getMatch(0);
+            }
+        }
+        if (StringUtils.isEmpty(currentDirID)) {
+            throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
         }
         /*
          * 2019-08-30: Seems like there is no pagination at all and rthis request will always return ALL objects of one folder no matter how

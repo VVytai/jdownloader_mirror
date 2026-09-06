@@ -39,10 +39,28 @@ public interface FFmpegSetup extends ConfigInterface {
     class DefaultFFMpegBinary extends AbstractDefaultFactory<String> {
         final String binary = "ffmpeg";
 
+        public static File fromPath(String executable) {
+            final String pathEnv = System.getenv("PATH");
+            if (pathEnv == null || pathEnv.isEmpty()) {
+                return null;
+            }
+            for (String dir : pathEnv.split(File.pathSeparator)) {
+                final File file = new File(dir, executable);
+                if (file.isFile()) {
+                    return file;
+                }
+            }
+            return null;
+        }
+
         @Override
         public String getDefaultValue(KeyHandler<String> keyHandler) {
+            return find(keyHandler, binary);
+        }
+
+        public static String find(KeyHandler<String> keyHandler, String binary) {
+            final BinayPathValidator binaryPathValidator = new BinayPathValidator();
             if (CrossSystem.isLinux() || CrossSystem.isMac()) {
-                final BinayPathValidator binaryPathValidator = new BinayPathValidator();
                 for (final String path : new String[] { "/usr/bin/", "/usr/local/bin/" }) {
                     try {
                         final String binaryPath = path + binary;
@@ -50,6 +68,15 @@ public interface FFmpegSetup extends ConfigInterface {
                         return binaryPath;
                     } catch (ValidationException ignore) {
                     }
+                }
+            }
+            final File fromPath = DefaultFFMpegBinary.fromPath(binary + (CrossSystem.isWindows() ? ".exe" : ""));
+            if (fromPath != null) {
+                try {
+                    final String binaryPath = fromPath.getAbsolutePath();
+                    binaryPathValidator.validate(keyHandler, binaryPath);
+                    return binaryPath;
+                } catch (ValidationException ignore) {
                 }
             }
             return null;
@@ -61,18 +88,7 @@ public interface FFmpegSetup extends ConfigInterface {
 
         @Override
         public String getDefaultValue(KeyHandler<String> keyHandler) {
-            if (CrossSystem.isLinux() || CrossSystem.isMac()) {
-                final BinayPathValidator binaryPathValidator = new BinayPathValidator();
-                for (final String path : new String[] { "/usr/bin/", "/usr/local/bin/" }) {
-                    try {
-                        final String binaryPath = path + binary;
-                        binaryPathValidator.validate(keyHandler, binaryPath);
-                        return binaryPath;
-                    } catch (ValidationException ignore) {
-                    }
-                }
-            }
-            return null;
+            return DefaultFFMpegBinary.find(keyHandler, binary);
         }
     }
 

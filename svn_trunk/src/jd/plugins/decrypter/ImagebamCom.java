@@ -32,6 +32,8 @@ import jd.parser.Regex;
 import jd.plugins.CryptedLink;
 import jd.plugins.DecrypterException;
 import jd.plugins.DecrypterPlugin;
+import jd.plugins.DecrypterRetryException;
+import jd.plugins.DecrypterRetryException.RetryReason;
 import jd.plugins.DownloadLink;
 import jd.plugins.FilePackage;
 import jd.plugins.LinkStatus;
@@ -40,7 +42,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.DirectHTTP;
 
-@DecrypterPlugin(revision = "$Revision: 52493 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53277 $", interfaceVersion = 3, names = {}, urls = {})
 public class ImagebamCom extends PluginForDecrypt {
     public ImagebamCom(PluginWrapper wrapper) {
         super(wrapper);
@@ -129,7 +131,7 @@ public class ImagebamCom extends PluginForDecrypt {
         }
     }
 
-    private ArrayList<DownloadLink> crawlGallery(final CryptedLink param) throws PluginException, IOException, InterruptedException {
+    private ArrayList<DownloadLink> crawlGallery(final CryptedLink param) throws PluginException, IOException, InterruptedException, DecrypterRetryException {
         final String galleryID = new Regex(param.getCryptedUrl(), PATTERN_GALLERY).getMatch(0);
         if (galleryID == null) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
@@ -164,8 +166,9 @@ public class ImagebamCom extends PluginForDecrypt {
      *
      * @throws InterruptedException
      * @throws NumberFormatException
+     * @throws DecrypterRetryException
      */
-    private ArrayList<DownloadLink> crawlGalleryNew(final CryptedLink param) throws PluginException, IOException, NumberFormatException, InterruptedException {
+    private ArrayList<DownloadLink> crawlGalleryNew(final CryptedLink param) throws PluginException, IOException, NumberFormatException, InterruptedException, DecrypterRetryException {
         final String galleryID = new Regex(param.getCryptedUrl(), PATTERN_VIEW).getMatch(0);
         if (galleryID == null) {
             throw new PluginException(LinkStatus.ERROR_PLUGIN_DEFECT);
@@ -274,7 +277,7 @@ public class ImagebamCom extends PluginForDecrypt {
         return ret;
     }
 
-    private void errorHandling(Browser br, CryptedLink param) throws PluginException {
+    private void errorHandling(Browser br, CryptedLink param) throws PluginException, DecrypterRetryException {
         /* Error handling */
         if (br.getHttpConnection().getResponseCode() == 404) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
@@ -282,6 +285,8 @@ public class ImagebamCom extends PluginForDecrypt {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
         } else if (br.containsHTML("The gallery you are looking for")) {
             throw new PluginException(LinkStatus.ERROR_FILE_NOT_FOUND);
+        } else if (br.containsHTML(">\\s*Apologies for the extended downtime caused by a serious disrupt")) {
+            throw new DecrypterRetryException(RetryReason.HOST, "Server maintenance");
         }
     }
 

@@ -50,6 +50,7 @@ import jd.PluginWrapper;
 import jd.controlling.ProgressController;
 import jd.controlling.linkcrawler.CrawledLink;
 import jd.http.Browser;
+import jd.http.Request;
 import jd.http.URLConnectionAdapter;
 import jd.http.requests.GetRequest;
 import jd.nutils.encoding.Encoding;
@@ -64,7 +65,7 @@ import jd.plugins.PluginException;
 import jd.plugins.PluginForDecrypt;
 import jd.plugins.hoster.KemonoParty;
 
-@DecrypterPlugin(revision = "$Revision: 53244 $", interfaceVersion = 3, names = {}, urls = {})
+@DecrypterPlugin(revision = "$Revision: 53277 $", interfaceVersion = 3, names = {}, urls = {})
 public class KemonoPartyCrawler extends PluginForDecrypt {
     public KemonoPartyCrawler(PluginWrapper wrapper) {
         super(wrapper);
@@ -78,6 +79,9 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
     @Override
     public Browser createNewBrowserInstance() {
         final Browser br = super.createNewBrowserInstance();
+        if ("pawchive.pw".equals(getHost())) {
+            br.getHeaders().put("User-Agent", Request.getSuggestedUserAgent("154.0"));// default UA blocked
+        }
         br.setFollowRedirects(true);
         return br;
     }
@@ -438,7 +442,7 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
         Boolean has_full = (Boolean) postmap.get("has_full");
         /* 2026-08-07: Workaround for possibly wrong/outdated "has_full" state. */
         /* preview_state field is optional or only from pawchive */
-        final Object preview_stateO = postmap.get("preview_state");
+        final Object preview_stateO = postmap.get("preview_state");// scraped, pending
         if (Boolean.FALSE.equals(has_full) && preview_stateO instanceof String && preview_stateO.toString().equalsIgnoreCase("scraped")) {
             logger.info("Found item with has_full == false AND preview_state == 'scraped'");
             has_full = true;
@@ -625,7 +629,11 @@ public class KemonoPartyCrawler extends PluginForDecrypt {
             /* file map has no downloadable path (e.g. covers/thumbnail-only structure) */
             return null;
         }
-        final boolean has_full_final = Boolean.TRUE.equals(has_full);
+        boolean has_full_final = Boolean.TRUE.equals(has_full);
+        if (Boolean.TRUE.equals(filemap.get("preview_only"))) {
+            // pawchive.pw
+            has_full_final = false;
+        }
         final String filepath = filepathO.toString();
         /*
          * Evaluate the file type based on the path extension (path is always given). When only a preview is available (has_full == false),

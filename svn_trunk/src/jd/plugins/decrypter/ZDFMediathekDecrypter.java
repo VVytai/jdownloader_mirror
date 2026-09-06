@@ -68,7 +68,7 @@ import jd.plugins.hoster.ZdfDeMediathek;
 import jd.plugins.hoster.ZdfDeMediathek.ZdfmediathekConfigInterface;
 import jd.plugins.hoster.ZdfDeMediathek.ZdfmediathekConfigInterface.SubtitleType;
 
-@DecrypterPlugin(revision = "$Revision: 53265 $", interfaceVersion = 3, names = { "zdf.de", "logo.de", "zdfheute.de", "3sat.de", "phoenix.de" }, urls = { "https?://(?:www\\.)?zdf\\.de/.+", "https?://(?:www\\.)?logo\\.de/.+", "https?://(?:www\\.)?zdfheute\\.de/.+", "https?://(?:www\\.)?3sat\\.de/.+/[A-Za-z0-9_\\-]+\\.html|https?://(?:www\\.)?3sat\\.de/uri/(?:syncvideoimport_beitrag_\\d+|transfer_SCMS_[a-f0-9\\-]+|[a-z0-9\\-]+)", "https?://(?:www\\.)?phoenix\\.de/(?:.*?-\\d+\\.html.*|podcast/[A-Za-z0-9]+/video/rss\\.xml)" })
+@DecrypterPlugin(revision = "$Revision: 53305 $", interfaceVersion = 3, names = { "zdf.de", "logo.de", "zdfheute.de", "3sat.de", "phoenix.de" }, urls = { "https?://(?:www\\.)?zdf\\.de/.+", "https?://(?:www\\.)?logo\\.de/.+", "https?://(?:www\\.)?zdfheute\\.de/.+", "https?://(?:www\\.)?3sat\\.de/.+/[A-Za-z0-9_\\-]+\\.html|https?://(?:www\\.)?3sat\\.de/uri/(?:syncvideoimport_beitrag_\\d+|transfer_SCMS_[a-f0-9\\-]+|[a-z0-9\\-]+)", "https?://(?:www\\.)?phoenix\\.de/(?:.*?-\\d+\\.html.*|podcast/[A-Za-z0-9]+/video/rss\\.xml)" })
 public class ZDFMediathekDecrypter extends PluginForDecrypt {
     private boolean                          fastlinkcheck             = false;
     private final String                     TYPE_ZDF                  = "(?i)https?://(?:www\\.)?(?:zdf\\.de|3sat\\.de)/.+";
@@ -443,16 +443,23 @@ public class ZDFMediathekDecrypter extends PluginForDecrypt {
         if (ptmdTemplates != null) {
             uniquePtmdTemplates.addAll(Arrays.asList(ptmdTemplates));
         }
-        final boolean isSingleVideoPage = uniqueVideoCanonicals.size() == 1 || uniquePtmdTemplates.size() == 1;
+        /*
+         * A single film/video page embeds exactly one "heroVideo" object whereas overview/collection listing pages embed one heroVideo per
+         * teaser. This count is more robust than the ptmd-template count above because a single film page can embed more than one
+         * ptmd-template (e.g. an extra trailer next to the main film, see /filme/eine-wingwoman-verliebt-sich-nicht-movie-100) which would
+         * otherwise look like a multi-video page and prevent the (correct) hero video from being crawled.
+         */
+        final int heroVideoCount = new Regex(html_unescaped, "\"heroVideo\"\\s*:\\s*\\{").count();
+        final boolean isSingleVideoPage = uniqueVideoCanonicals.size() == 1 || uniquePtmdTemplates.size() == 1 || heroVideoCount == 1;
         /* The hero video's canonical is the real video sophora ID (e.g. film pages: the URL slug points to a page-index, not the video). */
         final String heroSophoraID = findHeroSophoraID(html_unescaped);
         /* Only take the single-video fast-path when the URL clearly identifies one video or the page really contains just one. */
         if (ptmdTemplate != null && (sophoraID_from_url != null || isSingleVideoPage)) {
             logger.info("Found ptmdTemplate in website -> Using new way");
             /*
-             * Prefer the old way (content-document) whenever we know the video's sophora ID: it provides safe metadata + availability check.
-             * The sophora ID comes from the URL (e.g. /play/... links) or, if the URL slug is only a page-index (e.g. film pages), from the
-             * hero video's canonical.
+             * Prefer the old way (content-document) whenever we know the video's sophora ID: it provides safe metadata + availability
+             * check. The sophora ID comes from the URL (e.g. /play/... links) or, if the URL slug is only a page-index (e.g. film pages),
+             * from the hero video's canonical.
              */
             final String knownSophoraID = sophoraID_from_url != null ? sophoraID_from_url : heroSophoraID;
             if (knownSophoraID != null) {
@@ -574,6 +581,17 @@ public class ZDFMediathekDecrypter extends PluginForDecrypt {
             return sophoraID;
         }
         return null;
+    }
+
+    private boolean looksLikeSingleVideoURL(final String url) {
+        // String sophora_id_from_url = getSophoraIDFromURL_safe(url);
+        // if(sophora_id_from_url != null) {
+        // return true;
+        // }
+        if (url.matches("https?://[^/]+/filme/[^/]+")) {
+            return true;
+        }
+        return false;
     }
 
     /**

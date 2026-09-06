@@ -1347,8 +1347,8 @@ public class HLSDownloader extends DownloadInterface {
      * @throws Exception
      */
     protected String getSegmentExtension(final AbstractFFmpegBinary ffmpeg, final M3U8Segment segment) throws Exception {
-        final String format = getFFmpegFormat(ffmpeg);
-        if (format != null) {
+        final String format = getFFmpegFormat(ffmpeg);// container/output format
+        format: if (format != null) {
             if (format.matches("(?i)^opus$")) {
                 return "opus";
             } else if (format.matches("(?i)^ogg$")) {
@@ -1358,12 +1358,15 @@ public class HLSDownloader extends DownloadInterface {
             } else if (format.matches("(?i)^mp3$")) {
                 return "mp3";
             } else if (format.matches("(?i)^(mp4|aac|mpegts|h264)$")) {
-                return "ts";
+                // return "ts" at the end
+                break format;
             }
         }
         final String extension = Files.getExtension(new URL(segment.getUrl()).getPath(), true);
         final CompiledFiletypeExtension fileType = CompiledFiletypeFilter.getExtensionsFilterInterface(extension);
         if (CompiledFiletypeFilter.AudioExtensions.AAC.isSameExtensionGroup(fileType) || CompiledFiletypeFilter.VideoExtensions.MP4.isSameExtensionGroup(fileType)) {
+            // for example: detected format aac extension aac mismatches allowed extensions
+            // original m3u8 has file.aac, so the dummy one must have same extension
             return extension;
         }
         return "ts";

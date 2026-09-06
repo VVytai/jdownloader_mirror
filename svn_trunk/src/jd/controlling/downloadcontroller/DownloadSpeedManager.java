@@ -10,12 +10,9 @@ import org.appwork.utils.NullsafeAtomicReference;
 import org.appwork.utils.net.throttledconnection.ThrottledConnection;
 import org.appwork.utils.speedmeter.AverageSpeedMeter;
 import org.appwork.utils.speedmeter.SpeedMeterInterface;
-import org.jdownloader.logging.LogController;
 
 public class DownloadSpeedManager {
-
     private static class ManagedThrottledConnectionHelper {
-
         protected final ManagedThrottledConnectionHandler manager;
 
         private ManagedThrottledConnectionHelper(ManagedThrottledConnectionHandler manager) {
@@ -43,8 +40,7 @@ public class DownloadSpeedManager {
 
     private final CopyOnWriteArrayList<ManagedThrottledConnectionHandler> connectionHandlers = new CopyOnWriteArrayList<ManagedThrottledConnectionHandler>();
     private final CopyOnWriteArrayList<ManagedThrottledConnectionHandler> removedHandlers    = new CopyOnWriteArrayList<ManagedThrottledConnectionHandler>();
-
-    private NullsafeAtomicReference<Thread>                               watchDogThread     = new NullsafeAtomicReference<Thread>(null);
+    private final NullsafeAtomicReference<Thread>                         watchDogThread     = new NullsafeAtomicReference<Thread>(null);
     protected final int                                                   updateSpeed        = 2000;
     /**
      * download speed in bytes
@@ -56,24 +52,25 @@ public class DownloadSpeedManager {
      */
     protected final AtomicLong                                            traffic            = new AtomicLong(0l);
     protected final AtomicInteger                                         connections        = new AtomicInteger(0);
-
     protected final AtomicInteger                                         limit              = new AtomicInteger(0);
 
     public void addConnectionHandler(ManagedThrottledConnectionHandler handler) {
-        if (handler != null && connectionHandlers.addIfAbsent(handler)) {
-            handler.setManagedBy(this);
-            /*
-             * we set very low limit here because we want the real speed to get assigned on next speed-assign-loop
-             */
-            startWatchDog();
+        if (handler == null || !connectionHandlers.addIfAbsent(handler)) {
+            return;
         }
+        handler.setManagedBy(this);
+        /*
+         * we set very low limit here because we want the real speed to get assigned on next speed-assign-loop
+         */
+        startWatchDog();
     }
 
     public void removeConnectionHandler(ManagedThrottledConnectionHandler handler) {
-        if (handler != null && connectionHandlers.remove(handler)) {
-            handler.setManagedBy(null);
-            removedHandlers.add(handler);
+        if (handler == null || !connectionHandlers.remove(handler)) {
+            return;
         }
+        handler.setManagedBy(null);
+        removedHandlers.add(handler);
     }
 
     private void startWatchDog() {
@@ -93,7 +90,6 @@ public class DownloadSpeedManager {
                         final HashMap<ManagedThrottledConnectionHandler, ManagedThrottledConnectionHelper> speedAssignHelpMap = new HashMap<ManagedThrottledConnectionHandler, ManagedThrottledConnectionHelper>();
                         java.util.List<ManagedThrottledConnectionHandler> removedHandlers = new ArrayList<ManagedThrottledConnectionHandler>();
                         java.util.List<ThrottledConnectionHelp> currentHelpers = new ArrayList<ThrottledConnectionHelp>();
-
                         while (true) {
                             synchronized (watchDogThread) {
                                 if (connectionHandlers.size() == 0 && DownloadSpeedManager.this.removedHandlers.size() == 0) {
@@ -109,9 +105,8 @@ public class DownloadSpeedManager {
                             try {
                                 Thread.sleep(sleepTime);
                             } catch (final InterruptedException e) {
-                                 org.appwork.utils.logging2.extmanager.LoggerFactory.getDefaultLogger().log(e);
+                                org.appwork.utils.logging2.extmanager.LoggerFactory.getDefaultLogger().log(e);
                             }
-
                             int newBandwidth = 0;
                             final long lastRoundTraffic = traffic.get();
                             currentHelpers.clear();
@@ -138,7 +133,6 @@ public class DownloadSpeedManager {
                                 traffic.addAndGet(trafficDifference);
                             }
                             DownloadSpeedManager.this.removedHandlers.removeAll(removedHandlers);
-
                             for (final ManagedThrottledConnectionHandler manager : connectionHandlers) {
                                 /* manager handling */
                                 ManagedThrottledConnectionHelper managerHelper = speedAssignHelpMap.get(manager);
@@ -229,20 +223,23 @@ public class DownloadSpeedManager {
                             }
                         }
                     } catch (Throwable e) {
-                         org.appwork.utils.logging2.extmanager.LoggerFactory.getDefaultLogger().log(e);
+                        org.appwork.utils.logging2.extmanager.LoggerFactory.getDefaultLogger().log(e);
                     }
                 }
             };
             watchDogThread.set(thread);
             thread.start();
         }
-
     }
 
     public void setLimit(final int newLimit) {
         limit.set(Math.max(0, newLimit));
     }
 
+    /**
+     * Returns current speed limit in bytes. <br>
+     * 0 = no limit
+     */
     public int getLimit() {
         return limit.get();
     }

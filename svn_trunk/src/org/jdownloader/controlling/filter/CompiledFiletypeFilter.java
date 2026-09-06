@@ -21,6 +21,24 @@ import org.jdownloader.gui.translate._GUI;
 import jd.plugins.LinkInfo;
 
 public class CompiledFiletypeFilter {
+    public static enum FILETYPE {
+        AUDIO(CompiledFiletypeFilter.AudioExtensions.FLAC),
+        ARCHIVE(CompiledFiletypeFilter.ArchiveExtensions.ZIP),
+        VIDEO(CompiledFiletypeFilter.VideoExtensions.MP4),
+        DOCUMENT(CompiledFiletypeFilter.DocumentExtensions.TXT),
+        EXECUTABLE(CompiledFiletypeFilter.ExecutableExtensions.EXE),
+        SUBTITLE(CompiledFiletypeFilter.SubtitleExtensions.SRT),
+        HASH(CompiledFiletypeFilter.HashExtensions.MD5),
+        IMAGE(CompiledFiletypeFilter.ImageExtensions.JPG),
+        UNKNOWN(null);
+
+        public final CompiledFiletypeExtension extension;
+
+        private FILETYPE(CompiledFiletypeExtension extension) {
+            this.extension = extension;
+        }
+    }
+
     private final Pattern[]                   list;
     private final ExtensionsFilterInterface[] filterInterfaces;
     private final TypeMatchType               matchType;
@@ -54,6 +72,8 @@ public class CompiledFiletypeFilter {
         public String name();
 
         public boolean isSameExtensionGroup(ExtensionsFilterInterface extension);
+
+        public FILETYPE getFILETYPE();
 
         public ExtensionsFilterInterface[] listSameGroup();
 
@@ -196,6 +216,11 @@ public class CompiledFiletypeFilter {
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
         }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.HASH;
+        }
     }
 
     public static enum ExecutableExtensions implements CompiledFiletypeExtension {
@@ -273,6 +298,11 @@ public class CompiledFiletypeFilter {
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
         }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.EXECUTABLE;
+        }
     }
 
     public static enum SubtitleExtensions implements CompiledFiletypeExtension {
@@ -348,6 +378,11 @@ public class CompiledFiletypeFilter {
         @Override
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
+        }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.SUBTITLE;
         }
     }
 
@@ -620,6 +655,11 @@ public class CompiledFiletypeFilter {
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
         }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.DOCUMENT;
+        }
     }
 
     private static String getExtensionFromMimeType(String mimeType, CompiledFiletypeExtension fileTypeExtension) {
@@ -820,6 +860,11 @@ public class CompiledFiletypeFilter {
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
         }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.AUDIO;
+        }
     }
 
     public static enum VideoExtensions implements CompiledFiletypeExtension {
@@ -950,6 +995,11 @@ public class CompiledFiletypeFilter {
         @Override
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
+        }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.VIDEO;
         }
     }
 
@@ -1135,6 +1185,11 @@ public class CompiledFiletypeFilter {
         @Override
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
+        }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.ARCHIVE;
         }
     }
 
@@ -1350,6 +1405,11 @@ public class CompiledFiletypeFilter {
         @Override
         public boolean matchesMagic(InputStream inputStream) throws IOException {
             return false;
+        }
+
+        @Override
+        public FILETYPE getFILETYPE() {
+            return FILETYPE.IMAGE;
         }
     }
 
