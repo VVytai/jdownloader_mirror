@@ -1,8 +1,8 @@
 name: Daily update of this mirror
 on: 
-  workflow_dispatch
-  # schedule:
-  #   - cron:  '10 05 * * *'
+  #workflow_dispatch
+  schedule:
+    - cron:  '10 05 * * *'
 
 permissions:
   contents: write
