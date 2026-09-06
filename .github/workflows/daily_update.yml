@@ -53,7 +53,7 @@ jobs:
     - name: Remove big files that exceeds GitHub limit of 100 MB
       run: |
         cd "$GITHUB_WORKSPACE"
-        fdfind --type f --size +95m --hidden --exclude .git --exec rm -f -- {}
+        fdfind --type f --size +95m --hidden --exclude .git --exec rm -fv -- {}
 
     - name: Git commit 
       run: |
