@@ -7,6 +7,9 @@ on:
 permissions:
   contents: write
 
+env:
+  APT: sudo apt -y -qq -o=Dpkg::Use-Pty=0
+
 jobs:
   update_mirror:
     runs-on: ubuntu-latest
@@ -17,8 +20,9 @@ jobs:
     - name: Mirror
       run: |
         cd "$GITHUB_WORKSPACE"
-
-        sudo apt update && sudo apt install subversion
+        
+        $APT update && $APT install subversion fd-find
+        
         mkdir -p ./svn_browser
         mkdir -p ./svn_trunk
         mkdir -p ./svn_MyJDownloaderClient
@@ -41,15 +45,17 @@ jobs:
         cd "$GITHUB_WORKSPACE"
         du -sh *
 
+    - name: Remove big files that exceeds GitHub limit of 100 MB
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        fdfind --type f --size +95m --hidden --exclude .git --exec git rm --cached --ignore-unmatch -- {}
+        fdfind --type f --size +95m --hidden --exclude .git --exec rm -f -- {}
+
     - name: Git commit 
       run: |
         cd "$GITHUB_WORKSPACE"
         git config user.name updating-bot
         git config user.email github-actions@github.com
-
-        git rm --cached --ignore-unmatch \
-        svn_trunk/ressourcen/tools/linux/ffmpeg/x64/ffmpeg \
-        svn_trunk/ressourcen/tools/linux/ffmpeg/x64/ffprobe
         
         git add -A
         git commit -m "mirroring bot - $(date '+%Y/%m/%d')"
