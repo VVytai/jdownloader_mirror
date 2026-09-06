@@ -1,7 +1,8 @@
 name: Daily update of this mirror
 on: 
-  schedule:
-    - cron:  '10 05 * * *'
+  workflow_dispatch
+  # schedule:
+  #   - cron:  '10 05 * * *'
 
 permissions:
   contents: write
@@ -45,6 +46,10 @@ jobs:
         cd "$GITHUB_WORKSPACE"
         git config user.name updating-bot
         git config user.email github-actions@github.com
+
+        git rm --cached --ignore-unmatch \
+        svn_trunk/ressourcen/tools/linux/ffmpeg/x64/ffmpeg \
+        svn_trunk/ressourcen/tools/linux/ffmpeg/x64/ffprobe
         
         git add -A
         git commit -m "mirroring bot - $(date '+%Y/%m/%d')"
