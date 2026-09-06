@@ -15,13 +15,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 1
+
+    - name: Install prerequisites
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        $APT update && $APT install subversion fd-find
 
     - name: Mirror
       run: |
         cd "$GITHUB_WORKSPACE"
-        
-        $APT update && $APT install subversion fd-find
         
         mkdir -p ./svn_browser
         mkdir -p ./svn_trunk
